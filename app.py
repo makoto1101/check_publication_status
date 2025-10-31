@@ -31,7 +31,7 @@ st.markdown("""
             .block-container {
                 padding-top: 1rem;
             }
-            /* サイドバーの幅を400pxに指定 */
+            /* サイドバーの幅を600pxに指定 */
             [data-testid="stSidebar"] {
                 width: 600px !important;
             }
