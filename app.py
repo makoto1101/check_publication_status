@@ -880,7 +880,7 @@ else:
                 df_to_display = df_to_display[df_to_display['チェック'] == selected_check]
 
         with filter_cols[3]:
-            teiki_options = ["すべて", "〇", "✕"]
+            teiki_options = ["すべて", "〇", "×"]
             selected_teiki = st.selectbox("定期便:", teiki_options)
             if selected_teiki != "すべて":
                 df_to_display = df_to_display[df_to_display['定期便フラグ'] == selected_teiki]
