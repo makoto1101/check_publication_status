@@ -1,0 +1,109 @@
+/* --- 全体の背景とフォント --- */
+
+/* Streamlitのメインコンテナ */
+[data-testid="stAppViewContainer"] > .main {
+    background-image: linear-gradient(to right, #0f0c29, #302b63, #24243e);
+    color: #e0e0e0; /* 基本の文字色を少し明るく */
+}
+
+
+/* --- ヘッダーとタイトル --- */
+
+h1, h2, h3 {
+    color: #FFFFFF;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3); /* 文字に少し影をつける */
+}
+h1 {
+    border-bottom: 2px solid #5a5a9a; /* タイトルの下にアクセントライン */
+    padding-bottom: 10px;
+}
+
+
+/* --- UIコンポーネント --- */
+
+/* ボタン と ダウンロードボタン */ /* ★ 変更点 */
+div[data-testid="stButton"] > button,
+div[data-testid="stDownloadButton"] > button { /* ★ 変更点: ダウンロードボタンのセレクタを追加 */
+    background-color: #4A4A8A; /* 少し明るい紫 */
+    color: #FFFFFF;
+    border: 1px solid #7A7ABF; /* 枠線 */
+    border-radius: 10px;
+    padding: 5px 10px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
+/* ★ 変更点: hover効果にもセレクタを追加 */
+div[data-testid="stButton"] > button:hover,
+div[data-testid="stDownloadButton"] > button:hover {
+    background-color: #6A6AAF;
+    border-color: #FFFFFF;
+    transform: translateY(-2px); /* 少し浮き上がる効果 */
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.3);
+}
+/* ★ 変更点: focus効果にもセレクタを追加 */
+div[data-testid="stButton"] > button:focus,
+div[data-testid="stDownloadButton"] > button:focus {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5) !important;
+}
+
+
+/* エキスパンダー（アコーディオン） */
+[data-testid="stExpander"] {
+    background-color: rgba(255, 255, 255, 0.05); /* 半透明の白 */
+    border-radius: 10px;
+    border: none;
+    margin-bottom: 1rem;
+}
+[data-testid="stExpander"] summary {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #414141;
+}
+
+
+/* ファイルアップローダー */
+[data-testid="stFileUploader"] {
+    background-color: rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: 10px;
+}
+
+/* テキスト入力やセレクトボックス */
+[data-testid="stTextInput"], [data-testid="stSelectbox"] {
+    color: #FFFFFF;
+}
+
+/* データフレームのヘッダー */
+.stDataFrame thead {
+    background-color: #302b63;
+    color: white;
+}
+
+/* データフレームのセル */
+.stDataFrame tbody tr td {
+    color: #111111; /* データフレーム内の文字色は可読性のため暗く設定 */
+}
+
+/* Info, Warning, Errorのボックス */
+[data-testid="stAlert"] {
+    border-radius: 10px;
+}
+
+/* トースト全体のボックスのスタイル */
+[data-testid="stToast"] {
+    background-color: #8de6a2; 
+    color: #000000; 
+    top: auto !important;
+    bottom: 2rem !important;
+    right: 2rem !important;
+    left: auto !important;
+}
+[data-testid="stToast"] button {
+    color: white;
+}
+
+[data-testid="stAppViewContainer"] > .main > div > div > div > div > div:nth-child(2) > div > div:nth-child(3) {
+    /* カラム(col3)の中身を右に寄せる */
+    display: flex;
+    justify-content: flex-end;
+}
