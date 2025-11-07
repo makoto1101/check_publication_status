@@ -12,7 +12,11 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # --- 外部ファイルからステータス計算ロジックをインポート ---
-from status import calculate_status, TODAY_STR
+from status import calculate_status 
+
+# 基準日のデフォルト値とダウンロードファイル名用の日付を定義
+TODAY = datetime.now().date()
+TODAY_STR = TODAY.strftime('%Y%m%d')
 
 def local_css(file_name):
     """外部CSSファイルを読み込むための関数"""
@@ -162,11 +166,11 @@ else:
         except HttpError as err:
             # HttpError をキャッチ
             if err.resp.status == 404:
-                 st.error(f"スプレッドシート '{sheet_name}' が見つかりません。")
+                st.error(f"スプレッドシート '{sheet_name}' が見つかりません。")
             elif err.resp.status == 403:
-                 st.error(f"スプレッドシート '{sheet_name}' へのアクセス権限がありません。サービスアカウントが共有されているか確認してください。")
+                st.error(f"スプレッドシート '{sheet_name}' へのアクセス権限がありません。サービスアカウントが共有されているか確認してください。")
             else:
-                 st.error(f"[get_data_from_gsheet] スプレッドシート '{sheet_name}' の読み込み中に HttpError が発生しました: {err}")
+                st.error(f"[get_data_from_gsheet] スプレッドシート '{sheet_name}' の読み込み中に HttpError が発生しました: {err}")
             return pd.DataFrame(columns=expected_headers)
         except Exception as e:
             st.error(f"[get_data_from_gsheet] スプレッドシート '{sheet_name}' の読み込み中に予期せぬエラーが発生しました: {e}")
@@ -250,7 +254,7 @@ else:
     }
 
     PORTAL_ORDER = ['チョイス', '楽天', 'ANA', 'ふるなび', 'JAL', 'まいふる', 'マイナビ', 'プレミアム', 'JRE', 'さとふる', 'Amazon']
-    # TODAY_STR は status.py からインポート
+    # TODAY_STR は L23 で定義
 
     # フィルタリングをスキップするシートのリスト
     SKIP_FILTERING_SHEETS = ['チョイス在庫', 'さとふる在庫']
@@ -302,7 +306,7 @@ else:
         
         if '楽天' in file_name.lower() or 'さとふる' in file_name.lower():
             encodings_to_try = ['shift_jis', 'utf-8']
-        elif any(n.lower() in file_name.lower() for n in ["N2", "チョイス", "プレミアム"]):
+        elif any(n.lower() in file_name.lower() for n in ["N2", "チョイス", "プレミアム", "amazon"]):
             encodings_to_try = ['utf-8', 'shift_jis']
         else:
             encodings_to_try = ['shift_jis', 'utf-8']
@@ -493,14 +497,20 @@ else:
             for file in all_uploaded_files:
                 if file:
                     sheet_name = get_sheet_name_from_filename(file.name)
-                    # 既に読み込まれていて、ファイルIDが変わっていない場合は再読み込みしない
-                    if sheet_name not in st.session_state.dataframes or file.file_id != st.session_state.dataframes.get(f"{sheet_name}_id"):
+                    
+                    # ★ 変更: file_id の代わりに、名前、サイズ、タイプでファイルの一意性を判断
+                    file_key = f"{sheet_name}_metadata"
+                    current_metadata = (file.name, file.size, file.type)
+
+                    # 既に読み込まれていて、ファイルメタデータが変わっていない場合は再読み込みしない
+                    # ★ 変更: file_id の比較をメタデータの比較に変更
+                    if sheet_name not in st.session_state.dataframes or st.session_state.dataframes.get(file_key) != current_metadata:
                         df = robust_read_file(file)
                         if df is not None:
                             if sheet_name not in SKIP_FILTERING_SHEETS:
                                 df = filter_dataframe(df, sheet_name, item_codes_list, vendor_codes_list)
                             st.session_state.dataframes[sheet_name] = df
-                            st.session_state.dataframes[f"{sheet_name}_id"] = file.file_id # ファイルIDも保存
+                            st.session_state.dataframes[file_key] = current_metadata # ★ 変更: メタデータを保存
 
                             new_file_processed = True # ★ 新規ファイル処理フラグを立てる
 
@@ -548,7 +558,8 @@ else:
 
         # --- インポートされたファイルのプレビュー Expander ---
         # session_state.dataframes にファイルID以外のキーが存在するか確認
-        processed_dataframes_exist = any(not k.endswith('_id') for k in st.session_state.dataframes)
+        # ★ 変更: _id -> _metadata
+        processed_dataframes_exist = any(not k.endswith('_metadata') for k in st.session_state.dataframes)
 
         # 処理済みのデータフレームが存在する場合のみ Expander を表示
         if processed_dataframes_exist:
@@ -569,32 +580,49 @@ else:
                     st.write("ファイルがアップロードされていません。")
 
         # ベースポータル選択機能
-        st.markdown('<h2 style="font-size: 18px;">< ベースポータルの設定 ></h2>', unsafe_allow_html=True)
-        st.markdown('<p style="font-size: 14px; margin-top: -10px; margin-left: 20px;">選択されたポータルをベースに掲載状況を表示します。</p>', unsafe_allow_html=True)
+        st.markdown('<h2 style="font-size: 18px;">< ベースポータル・基準日の設定 ></h2>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size: 14px; margin-top: -10px; margin-left: 20px;">選択されたポータルと基準日を元に掲載状況を表示します。</p>', unsafe_allow_html=True)
 
         # インポートされたポータル名のリストを取得
-        uploaded_portal_names = [p for p in PORTAL_ORDER if p in st.session_state.dataframes and not p.endswith('_id')]
+        # ★ 変更: _id -> _metadata
+        uploaded_portal_names = [p for p in PORTAL_ORDER if p in st.session_state.dataframes and not p.endswith('_metadata')]
 
-        # サイドバーなのでカラムレイアウトを解除
-        if uploaded_portal_names:
-            # 「チョイス」があればデフォルトにするためのインデックスを計算
-            default_index = 0
-            if "チョイス" in uploaded_portal_names:
-                default_index = uploaded_portal_names.index("チョイス")
+        # ファイルがアップロードされているかどうかのフラグ
+        files_uploaded = bool(uploaded_portal_names)
+        
+        # ベースポータルと日付選択をカラムで横並びにする
+        col1, col2 = st.columns([2, 1]) # 2:1 の比率
 
-            selected_base_portal = st.selectbox(
-                label="ベースポータル選択",
-                options=uploaded_portal_names,
-                index=default_index, # デフォルト選択を設定
-                label_visibility="collapsed"
-            )
-        else:
-            selected_base_portal = None
-            st.selectbox(
-                label="ベースポータル選択",
-                options=["ファイルをアップロードしてください"],
-                disabled=True,
-                label_visibility="collapsed"
+        with col1:
+            if files_uploaded:
+                # 「チョイス」があればデフォルトにするためのインデックスを計算
+                default_index = 0
+                if "チョイス" in uploaded_portal_names:
+                    default_index = uploaded_portal_names.index("チョイス")
+
+                selected_base_portal = st.selectbox(
+                    label="ベースポータル選択",
+                    options=uploaded_portal_names,
+                    index=default_index, # デフォルト選択を設定
+                    label_visibility="collapsed"
+                )
+            else:
+                selected_base_portal = None
+                st.selectbox(
+                    label="ベースポータル選択",
+                    options=["ファイルをアップロードしてください"],
+                    disabled=True,
+                    label_visibility="collapsed"
+                )
+
+        # 日付選択ウィジェット (カレンダー)
+        with col2:
+            selected_date = st.date_input(
+                label="基準日", # ラベルは非表示
+                value=TODAY, # L22 で定義した本日日付
+                disabled=not files_uploaded,
+                label_visibility="collapsed",
+                help="ステータス判定の基準となる日付を選択します。"
             )
 
         # --- 「掲載状況を表示」ボタン ---
@@ -602,7 +630,7 @@ else:
         run_button = st.button(
             "掲載状況を表示",
             key="sidebar_run_button",
-            disabled=not uploaded_portal_names # リストが空ならTrue (非アクティブ)
+            disabled=not files_uploaded # リストが空ならTrue (非アクティブ)
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -615,7 +643,8 @@ else:
             st.stop()
             
         # 処理実行前のバリデーションチェック
-        loaded_df_names = {k for k in st.session_state.dataframes if not k.endswith('_id')}
+        # ★ 変更: _id -> _metadata
+        loaded_df_names = {k for k in st.session_state.dataframes if not k.endswith('_metadata')}
         
         # ベースポータルが選択されているか
         if selected_base_portal is None:
@@ -628,7 +657,16 @@ else:
         if not satofuru_files_ok:
             st.error("「さとふる」と「さとふる在庫」は両方同時にインポートする必要があります。ファイル選択を確認してください。")
 
+        # ベースポータルがNoneでないことと、さとふるファイルがOKなことを確認
         if selected_base_portal and satofuru_files_ok:
+            
+            # 選択された日付を 'YYYYMMDD' 形式の文字列に変換
+            select_date_str = selected_date.strftime('%Y%m%d')
+            
+            # ★ 追加: セッションステートに基準日とベースポータルを保存
+            st.session_state.current_select_date_str = select_date_str
+            st.session_state.current_base_portal = selected_base_portal
+
             with st.spinner("データを処理し、ステータスを計算中..."):
                 try:
                     teiki_bin_codes = get_teiki_data_from_gsheet(sheets_service)
@@ -647,7 +685,8 @@ else:
                         st.stop()
                     # ---------------------------------
 
-                    full_data = {k: v for k, v in st.session_state.dataframes.items() if not k.endswith('_id')}
+                    # ★ 変更: _id -> _metadata
+                    full_data = {k: v for k, v in st.session_state.dataframes.items() if not k.endswith('_metadata')}
                     
                     master_items = {}
                     base_portal_name = selected_base_portal
@@ -674,17 +713,17 @@ else:
                             if isinstance(code_col, int):
                                 # (チョイス系: インデックス番号で参照)
                                 # (lookup_maps側とクレンジング処理を合わせる)
-                                df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip()
+                                # ★ 変更: すべて .str.upper() に統一
+                                df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                             
                             elif isinstance(code_col, str):
                                 # (その他: ヘッダー名で参照)
                                 if base_portal_name == 'さとふる':
-                                    df_master_source['key'] = df_master_source[code_col].astype(str).str.extract(r'\[(.*?)\]').fillna('').squeeze()
-                                    # さとふるのキー（[ ]から抽出）には .0 や BOM はないと想定
+                                    # ★ 変更: すべて .str.upper() に統一
+                                    df_master_source['key'] = df_master_source[code_col].astype(str).str.extract(r'\[(.*?)\]', expand=False).fillna('').str.upper()
                                 else:
-                                    # (lookup_maps側とクレンジング処理を合わせる)
-                                    df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip()
-
+                                    # ★ 変更: すべて .str.upper() に統一
+                                    df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                             # 重複を除去
                             unique_items = df_master_source[df_master_source['key'] != ''].drop_duplicates(subset=['key'], keep='first')
 
@@ -703,9 +742,16 @@ else:
 
                     # --- 楽天ステータス判定用のデータ準備 ---
                     # H列(商品番号) -> G列(商品管理番号) の対応辞書を作成
+                    # ★ 変更: GSheetの「商品番号」も .upper() に統一
+                    df_product_db_copy = df_product_db.copy()
+                    df_product_db_copy['商品番号_upper'] = df_product_db_copy['商品番号'].astype(str).str.strip().str.upper()
+                    # 重複を除去
+                    df_product_db_copy = df_product_db_copy.dropna(subset=['商品番号_upper', '商品管理番号'])
+                    df_product_db_copy = df_product_db_copy.drop_duplicates(subset=['商品番号_upper'], keep='first')
+            
                     memo_map = pd.Series(
-                        df_product_db['商品管理番号'].values, 
-                        index=df_product_db['商品番号']
+                        df_product_db_copy['商品管理番号'].values, 
+                        index=df_product_db_copy['商品番号_upper']
                     ).to_dict()
 
                     # 楽天データから各種対応辞書を作成 (ヘッダー名で参照)
@@ -721,17 +767,20 @@ else:
                         # B列(商品番号) -> 行データ
                         if '商品番号' in df_rakuten_data.columns:
                             df_rakuten_b = df_rakuten_data.dropna(subset=['商品番号']).drop_duplicates(subset=['商品番号'], keep='first')
-                            rakuten_product_id_map = {row['商品番号']: row.to_dict() for _, row in df_rakuten_b.iterrows()}
+                            # ★ 変更: .upper() に統一
+                            rakuten_product_id_map = {str(row['商品番号']).strip().upper(): row.to_dict() for _, row in df_rakuten_b.iterrows()}
                         
                         # A列(商品管理番号（商品URL）) -> 行データ
                         if '商品管理番号（商品URL）' in df_rakuten_data.columns:
                             df_rakuten_a = df_rakuten_data.dropna(subset=['商品管理番号（商品URL）']).drop_duplicates(subset=['商品管理番号（商品URL）'], keep='first')
-                            rakuten_management_id_map = {row['商品管理番号（商品URL）']: row.to_dict() for _, row in df_rakuten_a.iterrows()}
+                            # ★ 変更: .upper() に統一
+                            rakuten_management_id_map = {str(row['商品管理番号（商品URL）']).strip().upper(): row.to_dict() for _, row in df_rakuten_a.iterrows()}
 
                         # H列(SKU管理番号) -> 行データ
                         if 'SKU管理番号' in df_rakuten_data.columns:
                             df_rakuten_h = df_rakuten_data.dropna(subset=['SKU管理番号']).drop_duplicates(subset=['SKU管理番号'], keep='first')
-                            rakuten_sku_code_map = {row['SKU管理番号']: row.to_dict() for _, row in df_rakuten_h.iterrows()}
+                            # ★ 重要: SKU管理番号は厳密比較のため、.upper() しない (元のまま)
+                            rakuten_sku_code_map = {str(row['SKU管理番号']).strip(): row.to_dict() for _, row in df_rakuten_h.iterrows()}
                     
                     # --- 他ポータルのデータ準備 (lookup_maps 作成) ---
                     for name, df in full_data.items():
@@ -751,7 +800,8 @@ else:
                                 
                             df_cleaned = df_data_only.dropna(subset=[key_col]).copy()
                             # BOM等の除去、.0除去、空白除去
-                            df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip()
+                            # ★ 変更: すべて .str.upper() に統一
+                            df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                             df_cleaned = df_cleaned[df_cleaned['key_col_str'] != '']
                             
                             unique_data = df_cleaned.drop_duplicates(subset=['key_col_str'], keep='first')
@@ -772,14 +822,16 @@ else:
                                     # 'お礼品名' 列(key_col)からコードを抽出
                                     match = re.search(r'\[(.*?)\]', str(row.get(key_col, ''))) 
                                     if match:
-                                        key = match.group(1).strip()
+                                        # ★ 変更: すべて .upper() に統一
+                                        key = match.group(1).strip().upper()
                                         if key and key not in temp_map:
                                             # キーがヘッダー名('お礼品ID', 'お礼品名'...)の辞書を作成
                                             temp_map[key] = row.to_dict()
                                 lookup_maps[name] = temp_map
                             else:
                                 # BOM等の除去、.0除去、空白除去
-                                df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip()
+                                # ★ 変更: すべて .str.upper() に統一
+                                df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                                 df_cleaned = df_cleaned[df_cleaned['key_col_str'] != '']
                                 
                                 unique_data = df_cleaned.drop_duplicates(subset=['key_col_str'], keep='first')
@@ -793,6 +845,10 @@ else:
                         statuses = {
                             portal: calculate_status(
                                 portal, code, lookup_maps, parent_lookup_maps,
+                                
+                                # 基準日(文字列)をキーワード引数として渡す
+                                select_date_str=select_date_str,
+                                
                                 # 楽天用の辞書をキーワード引数として渡す
                                 memo_map=memo_map,
                                 rakuten_product_id_map=rakuten_product_id_map,
@@ -808,7 +864,7 @@ else:
                         teiki_bin_flag = '〇' if code in teiki_bin_codes else '×'
                             
                         result_row = {'返礼品コード': code, '返礼品名': name, '事業者コード': generate_vendor_code(code), **statuses,
-                                      'チェック': check_val, '定期便フラグ': teiki_bin_flag, '公開中の数': public_count}
+                                    'チェック': check_val, '定期便フラグ': teiki_bin_flag, '公開中の数': public_count}
                         results_data.append(result_row)
                     
                     if results_data:
@@ -838,6 +894,9 @@ else:
                 except Exception as e:
                     st.error(f"処理中に予期せぬエラーが発生しました: {e}"); import traceback; st.code(traceback.format_exc())
                     st.session_state.results_df = pd.DataFrame()
+
+        # ★ 追加: 処理完了のトーストメッセージ
+        st.toast("掲載状況の表示を更新しました。", icon="📊")
 
     st.markdown('<h2 style="font-size: 26px;">3. 掲載状況</h2>', unsafe_allow_html=True)
 
@@ -1050,24 +1109,40 @@ else:
 
                 # --- Excel保存ボタンを1列目に配置 ---
                 with excel_col:
-                    # ★ CSSラッパーを削除
                     excel_data = to_excel(df_to_display)
+                    
+                    # ★ 変更: session_stateから値を取得
+                    # L708で保存した値を使用。存在しない場合のデフォルト値も設定
+                    base_portal_for_name = st.session_state.get('current_base_portal', 'N/A')
+                    date_str_for_name = st.session_state.get('current_select_date_str', 'YYYYMMDD')
+                    
+                    # ★ 変更: ファイル名を新しい形式に
+                    file_name_excel = f"掲載状況データ_{TODAY_STR}（target_{base_portal_for_name}_{date_str_for_name}）.xlsx"
+                    
                     st.download_button(
                         label="Excel保存",
                         data=excel_data,
-                        file_name=f"掲載状況データ_{TODAY_STR}.xlsx",
+                        file_name=file_name_excel, # ★ 変更
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key="excel_download",
-                        width='stretch' # ★ ボタンをカラム幅いっぱいに広げる
+                        width='stretch' 
                     )
 
                 # --- CSV保存ボタンを2列目に配置 ---
                 with csv_col:
                     csv_data = to_csv(df_to_display)
+                    
+                    # ★ 変更: session_stateから値を取得 (上記と同じ変数を使用)
+                    base_portal_for_name = st.session_state.get('current_base_portal', 'N/A')
+                    date_str_for_name = st.session_state.get('current_select_date_str', 'YYYYMMDD')
+                    
+                    # ★ 変更: ファイル名を新しい形式に
+                    file_name_csv = f"掲載状況データ_{TODAY_STR}（target_{base_portal_for_name}_{date_str_for_name}）.csv"
+                    
                     st.download_button(
                         label="CSV保存",
                         data=csv_data,
-                        file_name=f"掲載状況データ_{TODAY_STR}.csv",
+                        file_name=file_name_csv, # ★ 変更
                         mime="text/csv",
                         key="csv_download",
                         width='stretch'
@@ -1085,7 +1160,11 @@ else:
             if 'チェック' in df.columns: style['チェック'] = df['チェック'].apply(lambda x: 'background-color: #fa6c78; color: black;' if x == '要確認' else '')
             return style
 
+        # ★ 修正: 'df.to_display' -> 'df_to_display'
         center_aligned_cols = [p for p in PORTAL_ORDER if p in df_to_display.columns] + ['チェック', '定期便フラグ', '公開中の数']
+        
+        # ★ 追加: DataFrameのインデックスを1から始まる連番に変更
+        df_to_display.index = range(1, len(df_to_display) + 1)
         
         styler = df_to_display.style.apply(style_dataframe, axis=None).set_properties(subset=center_aligned_cols, **{'text-align': 'center'})
 
@@ -1105,10 +1184,24 @@ else:
             with col1:
                 if st.button("OK", key="reset_confirm_ok", width='stretch'):
                     # 実行処理
-                    keys_to_clear = ['results_df', 'dataframes', 'choice_stock_processed', 'rakuten_merged']
+                    # ★ 変更: クリアするキーリストに追加
+                    # ★ 修正(1): 先に dataframes の中身（メタデータ）を削除
+                    if 'dataframes' in st.session_state:
+                        meta_keys = [k for k in st.session_state.dataframes if k.endswith('_metadata')]
+                        for k in meta_keys:
+                            del st.session_state.dataframes[k] # 辞書の中身を削除
+
+                    # ★ 修正(2): dataframes自体を含む、残りのキーを削除
+                    keys_to_clear = [
+                        'results_df', 'dataframes', 'choice_stock_processed', 'rakuten_merged',
+                        'current_select_date_str', 'current_base_portal'
+                    ]
                     for key in keys_to_clear:
                         if key in st.session_state:
-                            del st.session_state[key]
+                            del st.session_state[key] # 属性自体を削除
+                    
+                    # ★ 修正(3): L.1188〜L.1190 (重複/エラー箇所) は削除済み
+
                     st.session_state.uploader_key += 1
                     
                     # 完了メッセージ用のフラグを立てる
