@@ -485,37 +485,64 @@ else:
 
         all_uploaded_files = uploaded_files or []
 
+        files_to_process = []   # 処理対象のファイルリスト
+
         # --- ファイル読み込みと前処理のロジック ---
         # ファイルがアップロードされたら、すぐに読み込んで前処理を行う
         if any(all_uploaded_files):
+
+            # 1. ポータル名の重複チェック (事前チェック)
+            portal_to_file_map = {} # キー: sheet_name, 値: file.name
+            files_to_reject = []    # 拒否対象のファイル情報 (タプルのリスト)
+
+            for file in all_uploaded_files:
+                if file: # ファイルがNoneでないことを確認
+                    sheet_name = get_sheet_name_from_filename(file.name)
+                    
+                    if sheet_name in portal_to_file_map:
+                        # 重複検出: このファイルは拒否リストへ
+                        original_file_name = portal_to_file_map[sheet_name]
+                        files_to_reject.append((file.name, sheet_name, original_file_name))
+                    else:
+                        # 新規ポータル: 処理対象リストに追加
+                        portal_to_file_map[sheet_name] = file.name
+                        files_to_process.append(file)
+
+            # 2. 拒否されたファイルのエラーメッセージを表示
+            if files_to_reject:
+                for file_name, portal_name, original_file_name in files_to_reject:
+                    st.error(f"⚠️ **{file_name}** はインポートされませんでした。**'{portal_name}'** ポータルは既に **{original_file_name}** によって使用されています。")
+
             # ★ トースト表示用のフラグを初期化
             new_file_processed = False
 
             item_codes_list = [code.strip() for code in item_codes_to_filter_input.split('\n') if code.strip()]
             vendor_codes_list = [code.strip() for code in vendor_codes_to_filter_input.split('\n') if code.strip()]
 
-            for file in all_uploaded_files:
-                if file:
-                    sheet_name = get_sheet_name_from_filename(file.name)
-                    
-                    # ★ 変更: file_id の代わりに、名前、サイズ、タイプでファイルの一意性を判断
-                    file_key = f"{sheet_name}_metadata"
-                    current_metadata = (file.name, file.size, file.type)
+            # 3. 処理対象のファイル (files_to_process) のみループ処理
+            for file in files_to_process:
+            
+                # fileがNoneの可能性は事前チェックで排除されている
+                sheet_name = get_sheet_name_from_filename(file.name)
+                
+                # ★ 変更: file_id の代わりに、名前、サイズ、タイプでファイルの一意性を判断
+                file_key = f"{sheet_name}_metadata"
+                current_metadata = (file.name, file.size, file.type)
 
-                    # 既に読み込まれていて、ファイルメタデータが変わっていない場合は再読み込みしない
-                    # ★ 変更: file_id の比較をメタデータの比較に変更
-                    if sheet_name not in st.session_state.dataframes or st.session_state.dataframes.get(file_key) != current_metadata:
-                        df = robust_read_file(file)
-                        if df is not None:
-                            if sheet_name not in SKIP_FILTERING_SHEETS:
-                                df = filter_dataframe(df, sheet_name, item_codes_list, vendor_codes_list)
-                            st.session_state.dataframes[sheet_name] = df
-                            st.session_state.dataframes[file_key] = current_metadata # ★ 変更: メタデータを保存
+                # 既に読み込まれていて、ファイルメタデータが変わっていない場合は再読み込みしない
+                # ★ 変更: file_id の比較をメタデータの比較に変更
+                if sheet_name not in st.session_state.dataframes or st.session_state.dataframes.get(file_key) != current_metadata:
+                    df = robust_read_file(file)
+                    if df is not None:
+                        if sheet_name not in SKIP_FILTERING_SHEETS:
+                            df = filter_dataframe(df, sheet_name, item_codes_list, vendor_codes_list)
+                        st.session_state.dataframes[sheet_name] = df
+                        st.session_state.dataframes[file_key] = current_metadata # ★ 変更: メタデータを保存
 
-                            new_file_processed = True # ★ 新規ファイル処理フラグを立てる
+                        new_file_processed = True # ★ 新規ファイル処理フラグを立てる
 
-                            # 前処理フラグのリセット
-                            if sheet_name == 'チョイス在庫': st.session_state['choice_stock_processed'] = False
+                        # 前処理フラグのリセット
+                        if sheet_name == 'チョイス在庫': st.session_state['choice_stock_processed'] = False
 
             # --- チョイス在庫データの前処理 ---
             # チョイスとチョイス在庫の両方が読み込まれていて、まだ前処理がされていない場合
@@ -566,7 +593,7 @@ else:
             with st.expander("インポートされたファイルのプレビュー", expanded=False):
                 col_idx = 0
                 processed_files_count = 0 # 正常に処理されたファイルの数をカウント
-                for file in all_uploaded_files: # all_uploaded_files は Expander の外で定義済み
+                for file in files_to_process:
                     if file:
                         sheet_name = get_sheet_name_from_filename(file.name)
                         # 前処理の結果、データフレームが存在するか確認
