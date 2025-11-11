@@ -1253,9 +1253,9 @@ else:
             # [全件数表示] [ [n] / n ページ] 
             col_spacer, col_page_input, col_page_total, col_spacer_end, col_max_num = st.columns([
                 3.5,  # 空白 (調整)
-                0.8, # [n] (入力欄)
+                1.0, # [n] (入力欄)
                 0.9, # / n ページ (テキスト)
-                1.5,  # 空白 (調整)
+                1.0,  # 空白 (調整)
                 1.5  # 最大件数説明文
             ])
 
