@@ -976,9 +976,30 @@ else:
             if selected_teiki != "すべて":
                 df_to_display = df_to_display[df_to_display['定期便フラグ'] == selected_teiki]
         
-        # --- ページネーション設定 ---
+        # --- ページネーション設定 (★ DataFrame描画前に計算処理を移動 ★) ---
         # 1ページあたりの表示件数
         ITEMS_PER_PAGE = 500 
+        
+        # フィルター後の総アイテム数を計算
+        total_items = len(df_to_display)
+        
+        # フィルター結果に基づき、総ページ数と現在のページ番号を計算・補正
+        if total_items > 0:
+            # 総ページ数を計算
+            total_pages = (total_items // ITEMS_PER_PAGE) + (1 if total_items % ITEMS_PER_PAGE > 0 else 0)
+            
+            # 現在のページ番号を取得
+            current_page = st.session_state.current_page
+            
+            # フィルター適用後に total_pages が減った場合、現在のページが最大ページを超えないように補正
+            if current_page > total_pages:
+                st.session_state.current_page = total_pages
+                current_page = total_pages # スライス処理用にローカル変数も更新
+        else:
+            # データが0件の場合
+            total_pages = 1
+            st.session_state.current_page = 1
+            current_page = 1
         
         st.write("")
 
@@ -1203,7 +1224,8 @@ else:
         if not df_to_display.empty:
         
             # ページ番号からスライスするインデックスを計算
-            start_idx = (st.session_state.current_page - 1) * ITEMS_PER_PAGE
+            # (current_page は L.1193 で補正済み)
+            start_idx = (current_page - 1) * ITEMS_PER_PAGE
             end_idx = start_idx + ITEMS_PER_PAGE
             
             # データをスライス
@@ -1222,15 +1244,11 @@ else:
             st.dataframe(styler, width='stretch', height=800)
 
         # --- ページネーションUI (表の下に配置) ---
-        total_items = len(df_to_display)
+        # total_items, total_pages, current_page は フィルター直後(L.1184付近)で計算済み
         
         # フィルター結果が0件でない場合のみページネーションを表示
         if total_items > 0:
-            # (ITEMS_PER_PAGE は L.1182 で定義済み)
-            total_pages = (total_items // ITEMS_PER_PAGE) + (1 if total_items % ITEMS_PER_PAGE > 0 else 0)
-
-            # 現在のページ番号
-            current_page = st.session_state.current_page
+            # (ITEMS_PER_PAGE, total_pages, current_page は L.1184 付近で定義・計算済み)
             
             # [全件数表示] [ [n] / n ページ] 
             col_spacer, col_page_input, col_page_total, col_spacer_end, col_max_num = st.columns([
