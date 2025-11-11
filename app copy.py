@@ -1232,14 +1232,32 @@ else:
             # 現在のページ番号
             current_page = st.session_state.current_page
             
-            # [全件数表示] [ [n] / n ページ] 
-            col_spacer, col_page_input, col_page_total, col_spacer_end, col_max_num = st.columns([
-                3.5,  # 空白 (調整)
+            # === ★★★ 修正箇所 スタート (L.1327 -> L.1396) ★★★ ===
+            
+            # [全件数表示] [＜＜] [＜] [ [n] / n ページ] [＞] [＞＞] [空白]
+            col_spacer, col_first, col_prev, col_page_input, col_page_total, col_next, col_last, col_spacer_end, col_test = st.columns([
+                2.8,  # 空白 (調整)
+                0.8, # ＜＜
+                0.8, # ＜
                 0.8, # [n] (入力欄)
                 0.9, # / n ページ (テキスト)
-                1.5,  # 空白 (調整)
-                1.5  # 最大件数説明文
+                0.8, # ＞
+                0.8, # ＞＞
+                0.3,  # 空白 (調整)
+                2.0  # 空白
             ])
+
+            with col_first:
+                # 「＜＜」 (最初へ) ボタン
+                if st.button("＜＜", key="page_first", help="最初のページへ", width='stretch', disabled=(current_page == 1)):
+                    st.session_state.current_page = 1
+                    st.rerun()
+
+            with col_prev:
+                # 「＜」 (前へ) ボタン
+                if st.button("＜", key="page_prev", help="前のページへ", width='stretch', disabled=(current_page == 1)):
+                    st.session_state.current_page -= 1
+                    st.rerun()
 
             # ページ番号入力用のコールバック関数
             # (st.number_input の on_change で呼び出される)
@@ -1270,7 +1288,21 @@ else:
                     unsafe_allow_html=True
                 )
             
-            with col_max_num:
+            with col_next:
+                # 「＞」 (次へ) ボタン
+                if st.button("＞", key="page_next", help="次のページへ", width='stretch', disabled=(current_page == total_pages)):
+                    st.session_state.current_page += 1
+                    st.rerun()
+
+            with col_last:
+                # 「＞＞」 (最後へ) ボタン
+                if st.button("＞＞", key="page_last", help="最後のページへ", width='stretch', disabled=(current_page == total_pages)):
+                    st.session_state.current_page = total_pages
+                    st.rerun()
+            
+            # === ★★★ 修正箇所 エンド ★★★ ===
+            
+            with col_test:
                 # ページ番号表示 (中央揃え)
                 st.markdown(
                     f"<div style='margin-top: 8px; text-align: center; font-weight: 500;'>※1ページ最大500件表示</div>",
