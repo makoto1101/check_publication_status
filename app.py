@@ -890,7 +890,29 @@ else:
                         }
                         
                         status_values = list(statuses.values())
-                        check_val = "OK" if len(set(status_values)) <= 1 else "要確認"
+                        
+                        # --- チェックロジック ---
+                        unique_statuses = set(status_values)
+                        
+                        # 「非表示」「在庫0」「受付終了」「倉庫」の4種を「グレーゾーン」と定義
+                        allowed_gray_statuses = {'非表示', '在庫0', '受付終了', '倉庫'}
+                        
+                        # グレーゾーン以外のステータス（公開中、未登録など）を抽出
+                        main_statuses = unique_statuses - allowed_gray_statuses
+                        
+                        # グレーゾーンのステータスを抽出
+                        gray_statuses = unique_statuses.intersection(allowed_gray_statuses)
+                        
+                        check_val = "OK" # デフォルトをOKに設定
+                        
+                        # パターン1: グレーゾーン以外のステータスが2種類以上ある場合 (例: '公開中'と'未登録')
+                        if len(main_statuses) >= 2:
+                            check_val = "要確認"
+                        
+                        # パターン2: グレーゾーン以外のステータスが1種類あり、かつグレーゾーンのステータスも1種類以上ある場合 (例: '公開中'と'在庫0')
+                        elif len(main_statuses) == 1 and len(gray_statuses) >= 1:
+                            check_val = "要確認"
+                        
                         public_count = sum(1 for s in status_values if s == '公開中')
                         
                         teiki_bin_flag = '〇' if code in teiki_bin_codes else '×'
