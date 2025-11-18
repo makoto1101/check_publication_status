@@ -243,7 +243,18 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         if stock_status == "在庫0":
             return "在庫0"
 
-        is_hidden = (search_display == "0")
+        #is_hidden = (search_display == "0")
+        # スプレッドシートの VALUE(AB4:AB)=0 に相当するロジック
+        is_hidden = False
+        if search_display != "": # 空文字でない場合
+            try:
+                # 文字列を数値(float)に変換
+                if float(search_display) == 0:
+                    is_hidden = True # "0" や "0.0" の場合は「非表示」
+            except ValueError:
+                # "1" や "公開" など、数値の0以外、または数値変換不可の場合は is_hidden = False (公開)
+                pass
+        # search_display が "" (空文字) の場合は、is_hidden = False (公開) のまま
 
         if not start_date_formatted:
             if not end_date_formatted:
