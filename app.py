@@ -11,8 +11,12 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# --- 外部ファイルからステータス計算ロジックをインポート ---
-from status import calculate_status 
+# --- ステータス計算ロジックをインポート ---
+from status import calculate_status
+# --- 操作マニュアルをインポート ---
+from operation_manual import show_instructions
+# --- ステータス判定条件をインポート ---
+from status_manual import show_status_conditions
 
 # 基準日のデフォルト値とダウンロードファイル名用の日付を定義
 TODAY = datetime.now().date()
@@ -72,12 +76,32 @@ if not st.user.get("is_logged_in", False):
 
 # 2. ログイン済みの場合: メインアプリを表示
 else:
-    # ログアウトボタン
-    _, col2, col3 = st.columns([10, 3, 1.5], gap="small")
-    with col2:
+    # --- ヘッダーエリア（マニュアル・ステータス条件・ユーザー名・ログアウト） ---
+    # レイアウト調整: [操作マニュアル] [判定条件] [空白] [ユーザー名] [ログアウト]
+    # カラム比率を調整してボタンを並べる
+    col_manual, col_status_link, _, col_user, col_logout = st.columns([2, 2.5, 3, 4.5, 2.2], gap="small")
+    
+    # 1. 操作マニュアル（リンク風ボタン）
+    with col_manual:
+        st.markdown("<div style='margin-top: 15px;'>", unsafe_allow_html=True)
+        if st.button("📖 操作マニュアル", type="tertiary"):
+            show_instructions()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # 2. ステータス判定条件（リンク風ボタン）(★追加)
+    with col_status_link:
+        st.markdown("<div style='margin-top: 15px;'>", unsafe_allow_html=True)
+        if st.button("📋 ステータス判定条件", type="tertiary"):
+            show_status_conditions()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # 3. ユーザー名表示
+    with col_user:
         # ユーザー名は st.user.name で取得可能
         st.markdown(f"<div style='text-align: right; margin-top: 22px;'>ようこそ <b>{st.user.name}</b> さん</div>", unsafe_allow_html=True)
-    with col3:
+    
+    # 4. ログアウトボタン
+    with col_logout:
         st.markdown("<div style='margin-top: 0px;'>", unsafe_allow_html=True)
         if st.button("ログアウト", width='stretch'):
             st.logout()
@@ -458,7 +482,6 @@ else:
                 )
 
         # --- ファイルアップローダー ---
-        st.markdown('<h2 style="font-size: 18px;">< ポータルファイルのアップロード ></h2>', unsafe_allow_html=True)
         uploaded_files = st.file_uploader(
             "ポータルファイルをアップロードしてください (複数選択可)",
             help="※「チョイス」と「チョイス在庫」、「さとふる」と「さとふる在庫」は、それぞれ必ずセットでアップロードしてください。",
@@ -611,9 +634,10 @@ else:
                 elif processed_files_count == 0: # アップロードファイルもない場合
                     st.write("ファイルがアップロードされていません。")
 
+        st.markdown('<h2 style="font-size: 24px;">3. 実行</h2>', unsafe_allow_html=True)
+
         # ベースポータル選択機能
-        st.markdown('<h2 style="font-size: 18px;">< ベースポータル・基準日の設定 ></h2>', unsafe_allow_html=True)
-        st.markdown('<p style="font-size: 14px; margin-top: -10px; margin-left: 20px;">選択されたポータルと基準日を元に掲載状況を表示します。</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size: 14px; margin-top: 10px; margin-bottom: 5px;">選択されたポータルと基準日を元に掲載状況を表示します。</p>', unsafe_allow_html=True)
 
         # インポートされたポータル名のリストを取得
         # ★ 変更: _id -> _metadata
@@ -918,7 +942,7 @@ else:
                         teiki_bin_flag = '〇' if code in teiki_bin_codes else '×'
                             
                         result_row = {'返礼品コード': code, '返礼品名': name, '事業者コード': generate_vendor_code(code), **statuses,
-                                    'チェック': check_val, '定期便フラグ': teiki_bin_flag, '公開中の数': public_count}
+                                      'チェック': check_val, '定期便フラグ': teiki_bin_flag, '公開中の数': public_count}
                         results_data.append(result_row)
                     
                     if results_data:

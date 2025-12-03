@@ -123,38 +123,36 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         rakuten_sku_code_map = kwargs.get('rakuten_sku_code_map', {})
 
         # A列(code)は引数で渡ってくるベースポータルの商品番号
-        # ★ 変更: app.py側で大文字化済みのため、そのまま (大文字)
+        # app.py側で大文字化済みのため、そのまま (大文字)
         product_id = code
 
         # ■ Z列 (SKU親コード)
-        # ★ 変更: product_id (大文字) で memo_map (キー大文字) を検索
+        # product_id (大文字) で memo_map (キー大文字) を検索
         sku_parent_code_raw = memo_map.get(product_id) # memo_map (GSheet) から取得
         
         if not sku_parent_code_raw:
-            # ★ 変更: product_id (大文字) で rakuten_product_id_map (キー大文字) を検索
+            # product_id (大文字) で rakuten_product_id_map (キー大文字) を検索
             product_row = rakuten_product_id_map.get(product_id)
-            # 旧: product_row.get(0, "なし") -> 新: ヘッダー名で取得
-            # ★ 修正: .upper() を削除
             sku_parent_code_raw = product_row.get("商品管理番号（商品URL）", "なし") if product_row else "なし"
         
-        # ★ 修正: GSheet/フォールバック両方のキーを正規化
-        # ★ 重要: sku_parent_code は「生」のコード (大文字小文字混在)
+        # GSheet/フォールバック両方のキーを正規化
+        # sku_parent_code は「生」のコード (大文字小文字混在)
         sku_parent_code = str(sku_parent_code_raw).strip() if sku_parent_code_raw and sku_parent_code_raw != "なし" else "なし"
 
-
+        # 【1】未登録
         if sku_parent_code == "なし":
             return "未登録"
 
         # ■ AH列 (在庫数) -> AE列
         stock_count_raw = ""
-        # ★ 変更: product_id (大文字) で検索
+        # product_id (大文字) で検索
         product_row = rakuten_product_id_map.get(product_id)
         
         # (ヘッダー名で参照)
         if product_row and product_row.get("在庫数", "") != "":  # J列
             stock_count_raw = product_row.get("在庫数")
         else:
-            # ★ 変更: ユーザー要望(A列)に基づき、product_id (A列のコード) で SKU管理番号(H列) を検索
+            # ユーザー要望(A列)に基づき、product_id (A列のコード) で SKU管理番号(H列) を検索
             
             # 1. product_id (大文字のコード、例: "AZA032") で厳密検索
             sku_row = rakuten_sku_code_map.get(product_id)
@@ -172,23 +170,23 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         # ■ AA列 (倉庫指定)
         warehouse_status = ""
         
-        # ★ 変更: product_id (大文字) で親行を検索
+        # product_id (大文字) で親行を検索
         product_row_for_warehouse = rakuten_product_id_map.get(product_id)
 
-        # ★ 変更: SKU管理番号辞書で product_id (大文字) を検索
+        # SKU管理番号辞書で product_id (大文字) を検索
         sku_row_found_by_product_id = rakuten_sku_code_map.get(product_id)
         if not sku_row_found_by_product_id:
-             # ★ 変更: 見つからなければ product_id (小文字) で再検索
+             # 見つからなければ product_id (小文字) で再検索
             sku_row_found_by_product_id = rakuten_sku_code_map.get(product_id.lower())
 
-        # ★ 変更: SKU管理番号辞書で sku_parent_code (生) を検索
+        # SKU管理番号辞書で sku_parent_code (生) を検索
         sku_row_found_by_sku_parent = rakuten_sku_code_map.get(sku_parent_code)
         
-        # ★ 変更: product_id または sku_parent_code が SKU管理番号辞書に存在するか
+        # product_id または sku_parent_code が SKU管理番号辞書に存在するか
         relevant_sku_row = sku_row_found_by_product_id or sku_row_found_by_sku_parent
         
         if relevant_sku_row:
-            # ★ 変更: SKU行が見つかった場合
+            # SKU行が見つかった場合
             # 1. SKU行自体の「倉庫指定」が "1" か確認
             if relevant_sku_row.get("倉庫指定", "") == "1":
                 warehouse_status = "1"
@@ -196,7 +194,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             elif product_row_for_warehouse and product_row_for_warehouse.get("倉庫指定", "") == "1":
                 warehouse_status = "1"
         else:
-            # ★ 変更: SKU行が見つからなかった場合 (ade007 のケース)
+            # SKU行が見つからなかった場合 (ade007 のケース)
             # 親行 (product_row_for_warehouse) が '倉庫指定=1' であっても、
             # warehouse_status は "" のまま (「倉庫」として扱わない)
             pass
@@ -204,32 +202,32 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         # ■ AB列 (サーチ表示)
         search_display = ""
         if not sku_parent_code or sku_parent_code == "なし":
-            # ★ 変更: product_row は L.151 で取得済み (product_id大文字)
+            # product_row は L.151 で取得済み (product_id大文字)
             if product_row: 
                 search_display = product_row.get("サーチ表示", "") # E列
         else:
-            # ★ 変更: sku_parent_code (生) を .upper() して検索
+            # sku_parent_code (生) を .upper() して検索
             management_row = rakuten_management_id_map.get(sku_parent_code.upper())
             if management_row: 
                 search_display = management_row.get("サーチ表示", "") # E列
 
         # ■ AF/AG列 -> AC/AD列 (販売期間)
         start_date_raw = ""
-        # ★ 変更: product_row は L.151 で取得済み (product_id大文字)
+        # product_row は L.151 で取得済み (product_id大文字)
         if product_row and product_row.get("販売期間指定（開始日時）", "") != "": # F列
             start_date_raw = product_row.get("販売期間指定（開始日時）")
         else:
-            # ★ 変更: sku_parent_code (生) を .upper() して検索
+            # sku_parent_code (生) を .upper() して検索
             management_row = rakuten_management_id_map.get(sku_parent_code.upper())
             if management_row: 
                 start_date_raw = management_row.get("販売期間指定（開始日時）", "")
 
         end_date_raw = ""
-        # ★ 変更: product_row は L.151 で取得済み (product_id大文字)
+        # product_row は L.151 で取得済み (product_id大文字)
         if product_row and product_row.get("販売期間指定（終了日時）", "") != "": # G列
             end_date_raw = product_row.get("販売期間指定（終了日時）")
         else:
-            # ★ 変更: sku_parent_code (生) を .upper() して検索
+            # sku_parent_code (生) を .upper() して検索
             management_row = rakuten_management_id_map.get(sku_parent_code.upper())
             if management_row: 
                 end_date_raw = management_row.get("販売期間指定（終了日時）", "")
@@ -237,106 +235,139 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         start_date_formatted = format_date(start_date_raw)
         end_date_formatted = format_date(end_date_raw)
 
-        # ■ Y列 (最終ステータス判定)
-        if warehouse_status == "1":
-            return "倉庫"
+        # --- ■ Y列 (最終ステータス判定) ---
+        
+        # 【2】在庫0
         if stock_status == "在庫0":
             return "在庫0"
 
-        #is_hidden = (search_display == "0")
+        # 【3】倉庫
+        if warehouse_status == "1":
+            return "倉庫"
+
+        # 【4】非表示 (サーチ表示が0)
         # スプレッドシートの VALUE(AB4:AB)=0 に相当するロジック
         is_hidden = False
-        if search_display != "": # 空文字でない場合
+        if search_display != "": 
             try:
                 # 文字列を数値(float)に変換
                 if float(search_display) == 0:
                     is_hidden = True # "0" や "0.0" の場合は「非表示」
             except ValueError:
-                # "1" や "公開" など、数値の0以外、または数値変換不可の場合は is_hidden = False (公開)
                 pass
-        # search_display が "" (空文字) の場合は、is_hidden = False (公開) のまま
+        
+        if is_hidden:
+            return "非表示"
 
-        if not start_date_formatted:
-            if not end_date_formatted:
-                return "非表示" if is_hidden else "公開中"
-            else:
-                return "受付終了" if end_date_formatted < select_date_str else ("非表示" if is_hidden else "公開中")
-        else:
-            if start_date_formatted > select_date_str:
-                return "未受付"
-            else:
-                if not end_date_formatted:
-                    return "非表示" if is_hidden else "公開中"
-                else:
-                    return "受付終了" if end_date_formatted < select_date_str else ("非表示" if is_hidden else "公開中")
+        # --- 日付判定 ---
+
+        # 【5】販売期間設定なし：公開中
+        if not start_date_formatted and not end_date_formatted:
+            return "公開中"
+
+        # 【6】販売開始日時が未来：未受付
+        if start_date_formatted and start_date_formatted > select_date_str:
+            return "未受付"
+
+        # 【7】販売終了日時なし：公開中
+        # （開始済みで、かつ終了日がない場合）
+        if not end_date_formatted:
+            return "公開中"
+
+        # 【8】販売終了日時が過去：受付終了
+        if end_date_formatted < select_date_str:
+            return "受付終了"
+
+        # 【9】上記以外：公開中
+        return "公開中"
 
     # --- さとふるのステータス判定ロジック ---
     if portal == 'さとふる':
-        publication_flag = row.get('公開フラグ', '') if row else ''
-        
-        if not publication_flag:
-            return '未登録'
-        
-        if publication_flag == '2':
-            return '非表示'
+        # --- データの準備 ---
+		# 1. メインファイル（さとふる）から「公開フラグ」「お礼品ID」を取得
+        pub_flag = row.get('公開フラグ', '') if row else ''
+        sato_id = row.get('お礼品ID', '') if row else ''
 
-        # 在庫チェックを日付判定より先に行う
-        satofuru_product_id = row.get('お礼品ID', '')
-        if satofuru_product_id:
-            stock_file_row = lookup_maps.get('さとふる在庫', {}).get(satofuru_product_id)
-            if stock_file_row:
-                stock_count = stock_file_row.get('全在庫数', '')
-                if stock_count == '0':
-                    return '在庫0'
+		# 2. 在庫ファイル（さとふる在庫）の行データをIDで検索
+        stock_row = lookup_maps.get('さとふる在庫', {}).get(sato_id) if sato_id else None
 
-        # 日付による判定
-        start_date = format_date(row.get('受付開始日', ''))
-        end_date = format_date(row.get('受付終了日', ''))
+		# 3. 在庫ファイルから「在庫数」「日付」を取得
+        # （※stock_rowが取得できた場合のみ値を取り出す）
+        stock_count = str(stock_row.get('全在庫数', '')) if stock_row else ''
+        start_date = format_date(stock_row.get('受付開始日')) if stock_row else ''
+        end_date = format_date(stock_row.get('受付終了日')) if stock_row else ''
 
-        if not end_date:
+        # 【1】返礼品コードが存在しない
+        if not row or not stock_row: return '未登録'
+
+        # 【2】公開フラグが 2
+        if pub_flag == '2': return '非表示'
+
+        # 【3】全在庫数が 0
+        if stock_count == '0': return '在庫0'
+
+        # 【4】受付期間設定なし（開始・終了ともに空欄）：公開中
+        # （他ポータルと挙動を合わせるため追加）
+        if not start_date and not end_date:
             return '公開中'
-        else:
-            if start_date and start_date > select_date_str:
-                return '未受付'
-            elif end_date < select_date_str:
-                return '受付終了'
-            else:
-                return '公開中'
+
+        # 【5】受付開始日が未来：未受付
+        # （★順序変更：終了日判定より先にチェックする）
+        if start_date and start_date > select_date_str:
+            return '未受付'
+
+        # 【6】受付終了日が過去：受付終了
+        if end_date and end_date < select_date_str:
+            return '受付終了'
+
+        # 【7】上記以外：公開中
+        # （終了日が未来の場合などはここで公開中になる）
+        return '公開中'
 
     # --- JREのステータス判定ロジック ---
     if portal == 'JRE':
-        # (ヘッダー名で参照)
-        publication_status = get_val('JRE', code, '掲載ステータス')
-        if publication_status == "":
+        # 掲載（表示）関連
+        pub_status = get_val('JRE', code, '掲載ステータス')
+        pub_start = format_date(get_val('JRE', code, '掲載期間（開始）'))
+        pub_end = format_date(get_val('JRE', code, '掲載期間（終了）'))
+        
+        # 在庫関連
+        stock_type = get_val('JRE', code, '在庫扱いの種別')
+        stock_count = get_val('JRE', code, '在庫数')
+        
+        # 販売（寄附）関連
+        sales_start = format_date(get_val('JRE', code, '販売期間（開始）'))
+        sales_end = format_date(get_val('JRE', code, '販売期間（終了）'))
+
+        # 【1】未登録
+        if not row:
             return '未登録'
-        if publication_status == "掲載不可":
+
+        # 【2】非表示（掲載ステータスNG または 掲載期間外）
+        is_pub_ng = (pub_status == "掲載不可")
+        is_pub_future = (pub_start and pub_start > select_date_str)
+        is_pub_past = (pub_end and pub_end < select_date_str)
+
+        if is_pub_ng or is_pub_future or is_pub_past:
             return '非表示'
 
-        stock_count = get_val('JRE', code, '在庫数')
-        stock_unlimited = get_val('JRE', code, '在庫扱いの種別')
-        
-        stock_status = ""
-        if stock_count != "":
-            if stock_unlimited == "無制限":
-                stock_status = "無制限"
-            elif stock_count == '0':
-                stock_status = "在庫0"
-        
-        if stock_status == "在庫0":
+        # 【3】在庫0
+        if stock_type != "無制限" and str(stock_count) == '0':
             return '在庫0'
 
-        start_date = format_date(get_val('JRE', code, '販売期間（開始）'))
-        end_date = format_date(get_val('JRE', code, '販売期間（終了）'))
-
-        if start_date and start_date > select_date_str:
-            return '未受付'
-        
-        if end_date == "":
+        # 【4】販売期間設定なし（開始・終了ともに空欄）：公開中
+        if not sales_start and not sales_end:
             return '公開中'
-        
-        if end_date and end_date < select_date_str:
+
+        # 【5】販売期間(開始)が未来：未受付
+        if sales_start and sales_start > select_date_str:
+            return '未受付'
+
+        # 【6】販売期間(終了)が過去：受付終了
+        if sales_end < select_date_str:
             return '受付終了'
-        
+
+        # 【7】上記以外：公開中
         return '公開中'
 
     if portal == 'ANA':
@@ -348,15 +379,27 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         start_date = format_date(get_val('ANA', code, '販売開始日'))
         end_date = format_date(get_val('ANA', code, '販売終了日'))
         
+        # 【1】未登録
         if status_flag == '': return '未登録'
+        # 【2】非表示
         if status_flag == '1': return '非表示'
+        # 【3】在庫0
         if stock_status == '在庫0': return '在庫0'
         
-        if not start_date: 
-            return '受付終了' if end_date and end_date < select_date_str else '公開中'
-        else:
-            if start_date > select_date_str: return '未受付'
-            return '受付終了' if end_date and end_date < select_date_str else '公開中'
+        # 【4】販売期間設定なし（開始・終了ともに空欄）：公開中
+        if not start_date and not end_date:
+            return '公開中'
+
+        # 【5】販売開始日が未来：未受付
+        if start_date and start_date > select_date_str:
+            return '未受付'
+
+        # 【6】販売終了日が過去：受付終了
+        if end_date and end_date < select_date_str:
+            return '受付終了'
+
+        # 【7】上記以外：公開中
+        return '公開中'
 
     if portal == 'ふるなび':
         sales_flag = get_val('ふるなび', code, '販売フラグ')
@@ -365,25 +408,36 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         start_date = format_date(get_val('ふるなび', code, '公開開始日'))
         end_date = format_date(get_val('ふるなび', code, '公開終了日'))
         
-        if sales_flag == '': return '未登録' # sales_flag(ao_val)を基準に未登録判定
+        # 【1】未登録
+        if sales_flag == '': return '未登録'
+        # 【2】非表示
         if sales_flag == 'off' or public_flag == 'off': return '非表示'
+        # 【3】在庫0
         if stock_status == '在庫0': return '在庫0'
         
-        if not start_date: 
-            return '受付終了' if end_date and end_date < select_date_str else '公開中'
-        else:
-            if start_date > select_date_str: return '未受付'
-            return '受付終了' if end_date and end_date < select_date_str else '公開中'
+        # 【4】公開期間設定なし（開始・終了ともに空欄）：公開中
+        if not start_date and not end_date:
+            return '公開中'
+
+        # 【5】公開開始日時が未来：未受付
+        if start_date and start_date > select_date_str:
+            return '未受付'
+
+        # 【6】公開終了日時が過去：受付終了
+        if end_date and end_date < select_date_str:
+            return '受付終了'
+
+        # 【7】上記以外：公開中
+        return '公開中'
 
     if portal == 'JAL':
+        # 値取得
         status = get_val('JAL', code, 'ステータス')
         display_setting = get_val('JAL', code, '表示設定')
 
-        # --- 在庫数(stock_status)のロジックを再現 ---
         stock_count = get_val('JAL', code, '在庫数')
         stock_setting = get_val('JAL', code, '在庫設定')
-        
-        stock_status = "" # (aw_val)
+        stock_status = ""
         if stock_count == "":
             if stock_setting == "在庫設定なし":
                 stock_status = "無制限"
@@ -394,44 +448,48 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         else:
             stock_status = stock_count
 
-        # --- 日付(final_start_date, final_end_date)のロジックを再現 --- 
-        start1 = format_date(get_val('JAL', code, '表示開始日時'))
-        end1 = format_date(get_val('JAL', code, '表示終了日時'))
-        start2 = format_date(get_val('JAL', code, '寄附開始日時'))
-        end2 = format_date(get_val('JAL', code, '寄附終了日時'))
-        
-        # 寄附期間(start2, end2)が優先される
-        final_start_date = start2 if start2 else start1
-        final_end_date = end2 if end2 else end1
+        disp_start = format_date(get_val('JAL', code, '表示開始日時'))
+        disp_end = format_date(get_val('JAL', code, '表示終了日時'))
+        kifu_start = format_date(get_val('JAL', code, '寄附開始日時'))
+        kifu_end = format_date(get_val('JAL', code, '寄附終了日時'))
 
-        # --- 最終ステータスの判定ロジック ---
-        if status == "":
-            return '未登録'
+        # 【1】ステータスが空欄
+        if status == "": return '未登録'
         
-        if status == "受付終了" or status == "品切れ":
-            return '受付終了'
+        # 【2】ステータスが 品切れ
+        if status == "品切れ": return '受付終了'
+
+        # 【3】ステータスが 受付終了
+        if status == "受付終了": return '受付終了'
         
-        if display_setting == "非表示":
-            return '非表示'
+        # 【4】表示設定が 非表示
+        if display_setting == "非表示": return '非表示'
             
-        if stock_status == "在庫0":
-            return '在庫0'
+        # 【5】在庫数が0
+        if stock_status == "在庫0": return '在庫0'
         
-        if not final_start_date:
-            if not final_end_date:
-                return '公開中'
-            return '受付終了' if final_end_date < select_date_str else '公開中'
-        else:
-            if final_start_date > select_date_str:
-                return '未受付'
-            else:
-                if not final_end_date:
-                    return '公開中'
-                return '受付終了' if final_end_date < select_date_str else '公開中'
+        # 【6】表示開始日時が未来 (未受付)
+        if disp_start and disp_start > select_date_str:
+            return '未受付'
+            
+        # 【7】表示終了日時が過去 (受付終了)
+        if disp_end and disp_end < select_date_str:
+            return '受付終了'
+            
+        # 【8】寄附開始日時が未来 (未受付)
+        if kifu_start and kifu_start > select_date_str:
+            return '未受付'
+            
+        # 【9】寄附終了日時が過去 (受付終了)
+        if kifu_end and kifu_end < select_date_str:
+            return '受付終了'
+            
+        # 【10】いずれにも該当しない -> 公開中
+        return '公開中'
             
     if portal == 'まいふる':
         status = get_val('まいふる', code, 'ステータス')
-        display_setting = get_val('まいふる', code, '状態') # ヘッダーリスト「状態」
+        display_setting = get_val('まいふる', code, '状態')
         stock_count_raw = get_val('まいふる', code, '在庫数')
         
         display_start_date = format_date(get_val('まいふる', code, '表示開始日時'))
@@ -439,36 +497,38 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         kifu_start_date = format_date(get_val('まいふる', code, '寄附開始日時'))
         kifu_end_date = format_date(get_val('まいふる', code, '寄附終了日時'))
 
-        # スプレッドシートのBI列のネストされたIF文のロジックを忠実に再現
-        if status == "":
-            return '未登録'
-        if status == "売り切れ":
-            return '非表示'
-        if status == "受付終了":
-            return '受付終了'
-        if display_setting == "非表示":
-            return '非表示'
-        if stock_count_raw == '0':
-            return '在庫0'
+        # 【1】ステータスが空欄
+        if status == "": return '未登録'
+
+        # 【2】ステータスが 売り切れ
+        if status == "売り切れ": return '受付終了'
+
+        # 【3】ステータスが 受付終了
+        if status == "受付終了": return '受付終了'
+
+        # 【4】状態が 非表示
+        if display_setting == "非表示": return '非表示'
+
+        # 【5】在庫数が 0
+        if stock_count_raw == '0': return '在庫0'
         
+        # 【6】表示開始日時が未来
         if display_start_date and display_start_date > select_date_str:
             return '未受付'
         
-        if display_end_date == "":
-            return '公開中' 
-        
-        if display_end_date < select_date_str:
+        # 【7】表示終了日時が過去
+        if display_end_date and display_end_date < select_date_str:
             return '受付終了'
         
+        # 【8】寄附開始日時が未来
         if kifu_start_date and kifu_start_date > select_date_str:
             return '未受付'
             
-        if kifu_end_date == "":
-            return '公開中' 
-        
-        if kifu_end_date < select_date_str:
+        # 【9】寄附終了日時が過去
+        if kifu_end_date and kifu_end_date < select_date_str:
             return '受付終了'
         
+        # 【10】いずれにも該当しない -> 公開中
         return '公開中'
 
     if portal == 'マイナビ':
@@ -481,35 +541,38 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         kifu_start_date = format_date(get_val('マイナビ', code, '寄附開始日時'))
         kifu_end_date = format_date(get_val('マイナビ', code, '寄附終了日時'))
         
-        # スプレッドシートのBQ列のネストされたIF文のロジックを忠実に再現
-        if status == "":
-            return '未登録'
-        if status == "売り切れ":
-            return '非表示'
-        if status == "受付終了":
-            return '受付終了'
-        if display_setting == "非表示":
-            return '非表示'
-        if stock_count_raw == '0':
-            return '在庫0'
+        # 【1】ステータスが空欄
+        if status == "": return '未登録'
+
+        # 【2】ステータスが 売り切れ
+        if status == "売り切れ": return '受付終了'
+
+        # 【3】ステータスが 受付終了
+        if status == "受付終了": return '受付終了'
+
+        # 【4】表示設定が 非表示
+        if display_setting == "非表示": return '非表示'
+
+        # 【5】在庫数が 0
+        if stock_count_raw == '0': return '在庫0'
+
+        # 【6】表示開始日時が未来
         if display_start_date and display_start_date > select_date_str:
             return '未受付'
 
-        if display_end_date == "":
-            return '公開中'
-
-        if display_end_date < select_date_str:
+        # 【7】表示終了日時が過去
+        if display_end_date and display_end_date < select_date_str:
             return '受付終了'
         
+        # 【8】寄附開始日時が未来
         if kifu_start_date and kifu_start_date > select_date_str:
             return '未受付'
             
-        if kifu_end_date == "":
-            return '公開中'
-
-        if kifu_end_date < select_date_str:
+        # 【9】寄附終了日時が過去
+        if kifu_end_date and kifu_end_date < select_date_str:
             return '受付終了'
 
+        # 【10】いずれにも該当しない -> 公開中
         return '公開中'
             
     if portal == 'プレミアム':
@@ -518,29 +581,33 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         start_date = format_date(get_val('プレミアム', code, '公開開始日時'))
         end_date = format_date(get_val('プレミアム', code, '公開終了日時'))
 
-        if not row:
+        # 【1】未登録
+        if not row or public_status == "":
             return '未登録'
         
-        if public_status == "":
-            return '未登録'
-
+        # 【2】非表示
         if public_status == "非公開/下書き":
             return '非表示'
 
+        # 【3】在庫0
         if stock_count_raw == '0':
             return '在庫0'
 
-        if end_date == "":
+        # 【4】期間設定なし（開始・終了ともに空欄）：公開中
+        if not start_date and not end_date:
             return '公開中'
 
+        # 【5】公開開始日が未来：未受付
         if start_date and start_date > select_date_str:
             return '未受付'
 
+        # 【6】公開終了日が過去：受付終了
         if end_date < select_date_str:
             return '受付終了'
-        
-        return '公開中'
 
+        # 【7】上記以外：公開中
+        return '公開中'
+    
     if portal == 'Amazon':
         # 1. Data_Amazon に SKU がない (row がない) 場合は「未登録」
         if not row: return '未登録'
