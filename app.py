@@ -304,7 +304,7 @@ else:
         if 'さとふる在庫' in name_lower: return 'さとふる在庫'
         if 'さとふる' in name_lower: return 'さとふる'
         if 'amazon' in name_lower: return 'Amazon'
-        return re.sub(r'\.(csv|tsv|xlsx)$', '', filename, flags=re.IGNORECASE)
+        return re.sub(r'\.(csv|tsv|xlsx|txt)$', '', filename, flags=re.IGNORECASE)
 
     def robust_read_file(uploaded_file):
         """
@@ -326,7 +326,7 @@ else:
                 st.error(f"Excelファイル '{file_name}' の読み込みに失敗: {e}")
                 return None
 
-        separator = '\t' if file_name.lower().endswith('.tsv') else ','
+        separator = '\t' if file_name.lower().endswith(('.tsv', '.txt')) else ','
         
         if '楽天' in file_name.lower() or 'さとふる' in file_name.lower():
             encodings_to_try = ['shift_jis', 'utf-8']
@@ -485,7 +485,7 @@ else:
         uploaded_files = st.file_uploader(
             "ファイル名に「ポータル名」を含めたファイルをアップロードしてください。 \n\n(複数選択可)",
             help="※「チョイス」と「チョイス在庫」、「さとふる」と「さとふる在庫」は、それぞれ必ずセットでアップロードしてください。",
-            type=['csv', 'tsv', 'xlsx'],
+            type=['csv', 'tsv', 'xlsx', 'txt'],
             accept_multiple_files=True,
             key=f"portal_uploader_{st.session_state.uploader_key}"
         )
