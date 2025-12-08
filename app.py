@@ -778,19 +778,31 @@ else:
 
         # --- 「掲載状況を表示」ボタン ---
         st.markdown('<div class="button-container" style="margin-top: 10px;">', unsafe_allow_html=True)
+        
+        # ★ 実行中フラグの初期化
+        if 'is_running' not in st.session_state:
+            st.session_state.is_running = False
+
+        # ★ ボタンクリック時のコールバック関数
+        def start_processing():
+            st.session_state.is_running = True
+
         run_button = st.button(
             "掲載状況を表示",
             key="sidebar_run_button",
-            disabled=not files_uploaded # リストが空ならTrue (非アクティブ)
+            disabled=not files_uploaded or st.session_state.is_running, # ★ ファイル未選択 または 実行中は無効化
+            on_click=start_processing # ★ クリック時に処理開始フラグを立てる
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
 
     # --- メインページUIセクション ---
-    if run_button:
+    # ★ 条件式を変更: ボタンの戻り値ではなく、セッションステートのフラグで判定
+    if st.session_state.is_running:
         # スプレッドシートクライアントが正常かチェック
         if sheets_service is None:
             st.error("Googleスプレッドシートに接続できません。認証設定を確認してください。")
+            st.session_state.is_running = False # ★ 停止する前にフラグを戻す
             st.stop()
             
         # 処理実行前のバリデーションチェック
@@ -830,6 +842,7 @@ else:
                     teiki_bin_codes = get_teiki_data_from_gsheet(sheets_service)
                     if teiki_bin_codes is None: # 取得失敗
                         st.error("定期便DB（スプレッドシート）の読み込みに失敗しました。")
+                        st.session_state.is_running = False # ★ 停止する前にフラグを戻す
                         st.stop()
                     
                     # ★ 商品管理DBの読み込みを削除
@@ -837,6 +850,7 @@ else:
                     df_business = get_business_data_from_gsheet(sheets_service)
                     if df_business is None: # 取得失敗
                         st.error("事業者DB（スプレッドシート）の読み込みに失敗しました。")
+                        st.session_state.is_running = False # ★ 停止する前にフラグを戻す
                         st.stop()
                     # ---------------------------------
 
@@ -1089,8 +1103,16 @@ else:
                     st.error(f"処理中に予期せぬエラーが発生しました: {e}"); import traceback; st.code(traceback.format_exc())
                     st.session_state.results_df = pd.DataFrame()
 
-        # ★ 追加: 処理完了のトーストメッセージ
-        st.toast("掲載状況の表示を更新しました。", icon="📊")
+            # ★ 追加: 処理完了のトーストメッセージ
+            st.toast("掲載状況の表示を更新しました。", icon="📊")
+            
+            # ★ 処理完了後にフラグを下ろして再実行（ボタンを有効化するため）
+            st.session_state.is_running = False
+            st.rerun()
+
+        else:
+            # バリデーションエラー時はフラグだけ下ろしてrerunしない（エラーメッセージを表示させたままにする）
+            st.session_state.is_running = False
 
     st.markdown('<h2 style="font-size: 26px;">3. 掲載状況</h2>', unsafe_allow_html=True)
 

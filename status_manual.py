@@ -111,7 +111,7 @@ def show_status_conditions():
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
     # --- スクロールエリアの定義 ---
-    with st.container(height=600, border=True):
+    with st.container(height=700, border=True):
         st.info("各ポータルのステータスは、以下の優先順位（番号順）で判定され、条件に合致した時点で確定します。")
 
         # ポータルごとにタブを分けて表示

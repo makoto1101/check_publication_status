@@ -23,7 +23,7 @@ def show_instructions():
     # --- スクロールエリアの定義 ---
     # height=600 (ピクセル)
     # border=True で枠線を付ける
-    with st.container(height=600, border=True):
+    with st.container(height=700, border=True):
         
         # 楽天の必須項目をリスト定義
         rakuten_items = [
