@@ -41,12 +41,22 @@ CUSTOM_CSS = """
 /* ============================================
    タブ (Tabs) のスタイル調整
    ============================================ */
-/* タブのボタン自体をターゲットにして幅を広げる */
+/* ★変更: タブリスト（親要素）を折り返し可能にする */
+div[data-baseweb="tab-list"] {
+    gap: 4px !important;
+    flex-wrap: wrap !important; /* 折り返しを有効化して全タブを表示 */
+    margin-bottom: 10px !important;
+}
+
+/* ★変更: タブボタンのスタイル調整 */
 button[data-baseweb="tab"] {
-    min-width: 90px !important;  /* 最小幅を設定（JALなどもこれで広がる） */
-    padding-left: 24px !important; /* 左の余白 */
-    padding-right: 24px !important; /* 右の余白 */
-    font-weight: bold !important; /* 文字を少し太くして見やすく */
+    min-width: auto !important; /* 固定最小幅を解除 */
+    padding-left: 12px !important; /* 余白を調整 */
+    padding-right: 12px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+    font-weight: bold !important;
+    flex-grow: 1 !important; /* 均等に広げる */
 }
 </style>
 """
@@ -105,10 +115,10 @@ def show_status_conditions():
         st.info("各ポータルのステータスは、以下の優先順位（番号順）で判定され、条件に合致した時点で確定します。")
 
         # ポータルごとにタブを分けて表示
-        # 順番: チョイス, 楽天, JAL, ふるなび, ANA, まいふる, マイナビ, プレミアム, JRE, さとふる, Amazon
+        # 順番: チョイス, 楽天, JAL, ふるなび, ANA, まいふる, マイナビ, プレミアム, JRE, さとふる, Amazon, 百選
         tabs = st.tabs([
             "チョイス", "楽天", "JAL", "ふるなび", "ANA", 
-            "まいふる", "マイナビ", "プレミアム", "JRE", "さとふる", "Amazon"
+            "まいふる", "マイナビ", "プレミアム", "JRE", "さとふる", "Amazon", "百選"
         ])
 
         # --- チョイス ---
@@ -131,10 +141,11 @@ def show_status_conditions():
             rows += create_status_row("在庫0", "【2】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("倉庫", "【3】 倉庫指定あり", "SKU行または商品行の「倉庫指定」が <code>1</code> の場合")
             rows += create_status_row("非表示", "【4】 サーチ表示が 0", "「サーチ表示」が <code>0</code> の場合")
-            rows += create_status_row("公開中", "【5】 販売期間設定なし", "「販売期間指定（開始日時）」と「販売期間指定（終了日時）」が共に設定されていない場合")
-            rows += create_status_row("未受付", "【6】 販売開始日時が未来", "「販売期間指定（開始日時）」が、<strong>本日より後の日付</strong>の場合")
-            rows += create_status_row("受付終了", "【7】 販売終了日時が過去", "「販売期間指定（終了日時）」が、<strong>本日より前の日付</strong>の場合")
-            rows += create_status_row("公開中", "【8】 上記以外", "期間内（販売終了日時の設定なしを含む）など、上記条件に該当しない場合")
+            rows += create_status_row("未受付", "【5】 注文ボタンが 0", "「注文ボタン」が <code>0</code> の場合")
+            rows += create_status_row("公開中", "【6】 販売期間設定なし", "「販売期間指定（開始日時）」と「販売期間指定（終了日時）」が共に設定されていない場合")
+            rows += create_status_row("未受付", "【7】 販売開始日時が未来", "「販売期間指定（開始日時）」が、<strong>本日より後の日付</strong>の場合")
+            rows += create_status_row("受付終了", "【8】 販売終了日時が過去", "「販売期間指定（終了日時）」が、<strong>本日より前の日付</strong>の場合")
+            rows += create_status_row("公開中", "【9】 上記以外", "期間内（販売終了日時の設定なしを含む）など、上記条件に該当しない場合")
             render_table(rows)
 
         # --- JAL ---
@@ -245,4 +256,17 @@ def show_status_conditions():
             rows += create_status_row("未登録", "【1】 SKUなし", "ファイルに該当の「出品者SKU」が存在しない場合")
             rows += create_status_row("在庫0", "【2】 数量が 0", "ファイルの「数量」が <code>0</code> の場合")
             rows += create_status_row("公開中", "【3】 上記以外", "行が存在し、「数量」が1以上の場合")
+            render_table(rows)
+
+        # --- 百選 ---
+        with tabs[11]:
+            rows = ""
+            rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「返礼品コード」が存在しない場合")
+            rows += create_status_row("非表示", "【2】 公開フラグが 0", "ファイルの「公開フラグ」が <code>0</code> の場合")
+            rows += create_status_row("在庫0", "【3】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("未受付", "【4】 公開開始日時が未来", "「公開開始日時」が、<strong>本日より後の日付</strong>の場合")
+            rows += create_status_row("受付終了", "【5】 公開終了日時が過去", "「公開終了日時」が、<strong>本日より前の日付</strong>の場合")
+            rows += create_status_row("未受付", "【6】 申込開始日時が未来", "「申込開始日時」が、<strong>本日より後の日付</strong>の場合")
+            rows += create_status_row("受付終了", "【7】 申込終了日時が過去", "「申込終了日時」が、<strong>本日より前の日付</strong>の場合")
+            rows += create_status_row("公開中", "【8】 上記以外", "すべての条件をクリアした場合")
             render_table(rows)

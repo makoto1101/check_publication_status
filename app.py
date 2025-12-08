@@ -225,16 +225,6 @@ else:
         df = get_data_from_gsheet(_sheets_service, sheet_name, expected_headers)
         return df
 
-    @st.cache_data(ttl=600)
-    def get_product_data_from_gsheet(_sheets_service):
-        """Googleスプレッドシートから商品管理データをDataFrameとして取得する"""
-        if _sheets_service is None: return pd.DataFrame(columns=["商品番号", "商品管理番号"])
-        
-        sheet_name = "商品管理DB"
-        expected_headers = ["商品番号", "商品管理番号"]
-        df = get_data_from_gsheet(_sheets_service, sheet_name, expected_headers)
-        return df
-
     # gspreadクライアントを初期化 -> sheetsサービスを初期化
     sheets_service = init_sheets_service()
 
@@ -256,7 +246,9 @@ else:
         "JRE": "品番1", # 既存ロジック(index 2)とヘッダーリストを照合
         "さとふる": "お礼品名", # 既存ロジック(index 1, [code]抽出)とヘッダーリストを照合
         "さとふる在庫": "お礼品ID", # 既存ロジック(index 1)とヘッダーリストを照合
-        "Amazon": "出品者SKU" # 既存ロジック(index 0)とヘッダーリストを照合
+        "Amazon": "出品者SKU", # 既存ロジック(index 0)とヘッダーリストを照合
+        "百選": "返礼品コード",
+        "百選在庫": "返礼品コード"
     }
 
     # 返礼品「名称」列の定義（チョイス系はインデックス番号、他はヘッダー名）
@@ -274,14 +266,15 @@ else:
         "プレミアム": "返礼品名",
         "JRE": "商品名",
         "さとふる": "お礼品名", # 既存ロジック(index 1)とヘッダーリストを照合
-        "Amazon": None
+        "Amazon": None,
+        "百選": "返礼品名称"
     }
 
-    PORTAL_ORDER = ['チョイス', '楽天', 'ANA', 'ふるなび', 'JAL', 'まいふる', 'マイナビ', 'プレミアム', 'JRE', 'さとふる', 'Amazon']
+    PORTAL_ORDER = ['チョイス', '楽天', 'ANA', 'ふるなび', 'JAL', 'まいふる', 'マイナビ', 'プレミアム', 'JRE', 'さとふる', 'Amazon', '百選']
     # TODAY_STR は L23 で定義
 
     # フィルタリングをスキップするシートのリスト
-    SKIP_FILTERING_SHEETS = ['チョイス在庫', 'さとふる在庫']
+    SKIP_FILTERING_SHEETS = ['楽天', 'チョイス在庫', 'さとふる在庫', '百選在庫'] # 「楽天」がファイル構成が特殊なのでスキップ
     
     # ヘッダーを持たない（`header=None`で読み込む）シートのリスト
     SHEETS_WITHOUT_HEADER = ['チョイス', 'チョイス在庫']
@@ -304,6 +297,8 @@ else:
         if 'さとふる在庫' in name_lower: return 'さとふる在庫'
         if 'さとふる' in name_lower: return 'さとふる'
         if 'amazon' in name_lower: return 'Amazon'
+        if '百選在庫' in name_lower: return '百選在庫'
+        if '百選' in name_lower: return '百選'
         return re.sub(r'\.(csv|tsv|xlsx|txt)$', '', filename, flags=re.IGNORECASE)
 
     def robust_read_file(uploaded_file):
@@ -344,7 +339,7 @@ else:
                     encoding=corrected_encoding, 
                     dtype=str, 
                     sep=separator, 
-                    engine='python', 
+                    # engine='python',  <-- ★削除（高速化のためCエンジンを使用）
                     on_bad_lines='warn', 
                     encoding_errors='ignore'
                 )
@@ -368,23 +363,78 @@ else:
     def filter_dataframe(df, sheet_name, item_codes_to_filter, vendor_codes_to_filter):
         """
         DataFrameを指定されたコードリストでフィルタリングする関数。
-        KEY_COLUMN_MAPの値がintかstrかで処理を分岐する。
+        楽天の場合は「商品番号」または「システム連携用SKU番号」を対象とする。
+        返礼品コード、事業者コード共に「部分一致（含む）」で判定する。
         """
         if df is None or df.empty:
             return df
         if not item_codes_to_filter and not vendor_codes_to_filter:
             return df
         
+        data = df # robust_read_file でヘッダー処理済みのため、df全体がデータ
+        if data.empty:
+            return df
+
+        # ★ 返礼品コード検索用の正規表現パターンを作成 (部分一致用)
+        item_pattern = ""
+        if item_codes_to_filter:
+            item_pattern = '|'.join(map(re.escape, item_codes_to_filter))
+
+        # ★ 事業者コード検索用の正規表現パターンを作成 (部分一致用)
+        vendor_pattern = ""
+        if vendor_codes_to_filter:
+            vendor_pattern = '|'.join(map(re.escape, vendor_codes_to_filter))
+
+        # --- 【改修】楽天の場合の特例処理 ---
+        if sheet_name == '楽天':
+            # 必要な列の存在確認 (robust_read_file後のため通常はあるはずだが安全のためget)
+            col_item_no = "商品番号"
+            col_sys_sku = "システム連携用SKU番号"
+            
+            # 列が存在しない場合はフィルタリングせずに返す（またはエラー扱いでもよいが、ここでは安全策）
+            if col_item_no not in data.columns:
+                st.error(f"ファイル '{sheet_name}' に '{col_item_no}' 列が見つかりません。")
+                return df
+            
+            # 比較用にシリーズを取得 (システム連携用SKU番号がない場合も考慮してget)
+            series_item_no = data[col_item_no].astype(str).str.strip()
+            if col_sys_sku in data.columns:
+                series_sys_sku = data[col_sys_sku].astype(str).str.strip()
+            else:
+                # 列がない場合はマッチしないダミーデータとして空文字シリーズを作成
+                series_sys_sku = pd.Series('', index=data.index)
+
+            # フィルタリング用のマスクを初期化 (すべてTrue)
+            mask = pd.Series(True, index=data.index)
+
+            # 1. 返礼品コードでフィルタリング (部分一致: 商品番号 OR システム連携用SKU番号)
+            if item_pattern:
+                # 商品番号が含まれる OR システム連携用SKU番号が含まれる (大文字小文字無視)
+                match_item = series_item_no.str.contains(item_pattern, na=False, case=False)
+                match_sku = series_sys_sku.str.contains(item_pattern, na=False, case=False)
+                mask &= (match_item | match_sku)
+
+            # 2. 事業者コードでフィルタリング (部分一致: 商品番号由来 OR システム連携用SKU番号由来)
+            if vendor_pattern:
+                # それぞれから事業者コードを生成
+                vendor_series_item = series_item_no.apply(generate_vendor_code)
+                vendor_series_sku = series_sys_sku.apply(generate_vendor_code)
+                
+                # 正規表現で部分一致検索 (大文字小文字無視)
+                match_vendor_item = vendor_series_item.str.contains(vendor_pattern, na=False, case=False)
+                match_vendor_sku = vendor_series_sku.str.contains(vendor_pattern, na=False, case=False)
+                
+                mask &= (match_vendor_item | match_vendor_sku)
+
+            return data[mask]
+
+        # --- 以下、既存の他ポータル用ロジック ---
+        
         key_col = KEY_COLUMN_MAP.get(sheet_name)
         if key_col is None:
             # キー列が未定義ならフィルタリングしない
             return df
         
-        data = df # robust_read_file でヘッダー処理済みのため、df全体がデータ
-        
-        if data.empty:
-            return df # データ行がなければそのまま返す
-            
         item_code_series = pd.Series(dtype=str)
         
         # --- キー列の型（int or str）で処理を分岐 ---
@@ -418,17 +468,17 @@ else:
         # フィルタリング用のマスクを初期化
         mask = pd.Series(True, index=data.index)
         
-        # 1. 返礼品コードでフィルタリング
-        if item_codes_to_filter:
-            # isinメソッドが機能するように、空のコードを持つ行は除外
-            mask &= (item_code_series != '') & (item_code_series.isin(item_codes_to_filter))
+        # 1. 返礼品コードでフィルタリング (部分一致)
+        if item_pattern:
+            # 正規表現で部分一致検索 (大文字小文字無視)
+            mask &= (item_code_series != '') & (item_code_series.str.contains(item_pattern, na=False, case=False))
         
-        # 2. 事業者コードでフィルタリング
-        if vendor_codes_to_filter:
+        # 2. 事業者コードでフィルタリング (部分一致)
+        if vendor_pattern:
             # 抽出または取得した返礼品コードシリーズから事業者コードを生成
             vendor_code_series = item_code_series.apply(generate_vendor_code)
-            # isinメソッドが機能するように、空の事業者コードを持つ行は除外
-            mask &= (vendor_code_series != '') & (vendor_code_series.isin(vendor_codes_to_filter))
+            # 正規表現で部分一致検索 (大文字小文字無視)
+            mask &= (vendor_code_series != '') & (vendor_code_series.str.contains(vendor_pattern, na=False, case=False))
         
         # ヘッダーは robust_read_file で処理済み (df.columns に格納)
         # そのため、データ行 (data) のみをフィルタリングして返す
@@ -454,7 +504,7 @@ else:
 
         with st.expander("DB（スプレッドシート）を開く"):
             st.markdown(
-                "[「定期便番号」「事業者」「商品管理番号」の登録はこちらから](https://docs.google.com/spreadsheets/d/1Yb-0DLDb-IAKIxDkhaSZxDl-zd2iDHZ3aX3_4mSiQyI/)",
+                "[「定期便番号」「事業者」の登録はこちらから](https://docs.google.com/spreadsheets/d/1Yb-0DLDb-IAKIxDkhaSZxDl-zd2iDHZ3aX3_4mSiQyI/)",
                 unsafe_allow_html=True
             )
             st.info("データ編集後は、アプリを再起動 or 画面更新（「F5」キー）をしてください。")
@@ -464,7 +514,7 @@ else:
         with st.expander("フィルター設定を開く"):
             st.info("""
                 こちらに対象のコードを入力することで、読み込むデータを絞り込むことができます。
-                ※チョイス在庫、さとふる在庫は仕様上、このフィルターの対象外です。
+                ※「楽天」「チョイス在庫」「さとふる在庫」「百選在庫」は仕様上、このフィルターの対象外です。
             """)
             filter_col1, filter_col2 = st.columns(2)
             with filter_col1:
@@ -483,7 +533,7 @@ else:
 
         # --- ファイルアップローダー ---
         uploaded_files = st.file_uploader(
-            "ファイル名に「ポータル名」を含めたファイルをアップロードしてください。 \n\n(複数選択可)",
+            "ファイル名に「ポータル名」を含めたファイルをアップロードしてください。\n\n(複数選択可)",
             help="※「チョイス」と「チョイス在庫」、「さとふる」と「さとふる在庫」は、それぞれ必ずセットでアップロードしてください。",
             type=['csv', 'tsv', 'xlsx', 'txt'],
             accept_multiple_files=True,
@@ -505,6 +555,12 @@ else:
             is_sato_stock_present = 'さとふる在庫' in uploaded_file_names
             if is_sato_present ^ is_sato_stock_present:
                 st.error("⚠️ 「さとふる」と「さとふる在庫」は、必ずセットでアップロードしてください。")
+
+            # 百選ファイルのペアチェック
+            is_hyakusen_present = '百選' in uploaded_file_names
+            is_hyakusen_stock_present = '百選在庫' in uploaded_file_names
+            if is_hyakusen_present ^ is_hyakusen_stock_present:
+                st.error("⚠️ 「百選」と「百選在庫」は、必ずセットでアップロードしてください。")
 
         def show_file_preview(uploaded_file, df_preview, num_rows=5):
             """アップロードされたファイルのプレビューを表示する"""
@@ -561,9 +617,48 @@ else:
                 # ★ 変更: file_id の比較をメタデータの比較に変更
                 if sheet_name not in st.session_state.dataframes or st.session_state.dataframes.get(file_key) != current_metadata:
                     df = robust_read_file(file)
+                    
                     if df is not None:
+                        # --- 【改修】楽天の処理 (必須列チェック & データ加工) ---
+                        if sheet_name == '楽天':
+                            # 1. 必須列チェック
+                            required_columns = {
+                                "商品管理番号（商品URL）", "商品番号", "商品名", "倉庫指定",
+                                "サーチ表示", "販売期間指定（開始日時）", "販売期間指定（終了日時）",
+                                "注文ボタン", "SKU管理番号", "システム連携用SKU番号",
+                                "在庫数", "SKU倉庫指定"
+                            }
+                            missing_cols = required_columns - set(df.columns)
+                            if missing_cols:
+                                st.error(f"⚠️ **{file.name}** はインポートできませんでした。以下の必須列が不足しています: {', '.join(missing_cols)}")
+                                continue  # このファイルの処理をスキップして次のファイルへ
+                            
+                            # 2. データ加工: 「システム連携用SKU番号」に値がある場合のみ、「商品番号」にコピー
+                            # (空文字でない場合のみ上書きする)
+                            mask_sku = df['システム連携用SKU番号'] != ''
+                            df.loc[mask_sku, '商品番号'] = df.loc[mask_sku, 'システム連携用SKU番号']
+
+                            # 3. データ加工: 「SKU倉庫指定」に値がある場合のみ、「倉庫指定」にコピー
+                            # (空文字でない場合のみ上書きする)
+                            mask_warehouse = df['SKU倉庫指定'] != ''
+                            df.loc[mask_warehouse, '倉庫指定'] = df.loc[mask_warehouse, 'SKU倉庫指定']
+
+                            # 4. データ加工: 先頭行のデータを同グループの下行へコピー (groupby + transform first)
+                            fill_targets = ['商品名', 'サーチ表示', '販売期間指定（開始日時）', '販売期間指定（終了日時）', '注文ボタン']
+                            
+                            # ★高速化: groupby().transform('first') の代わりに map を使用
+                            # 商品管理番号でグループ化し、各ターゲット列について、グループ内の先頭の値を全体に適用する
+                            # reset_index等は不要、Seriesとして取得
+                            grouped_first = df.groupby('商品管理番号（商品URL）')[fill_targets].first()
+                            
+                            for col in fill_targets:
+                                # マッピング実行 (transformより圧倒的に速い)
+                                df[col] = df['商品管理番号（商品URL）'].map(grouped_first[col])
+                        # -----------------------------------
+
                         if sheet_name not in SKIP_FILTERING_SHEETS:
                             df = filter_dataframe(df, sheet_name, item_codes_list, vendor_codes_list)
+                        
                         st.session_state.dataframes[sheet_name] = df
                         st.session_state.dataframes[file_key] = current_metadata # ★ 変更: メタデータを保存
 
@@ -713,8 +808,15 @@ else:
         if not satofuru_files_ok:
             st.error("「さとふる」と「さとふる在庫」は両方同時にインポートする必要があります。ファイル選択を確認してください。")
 
-        # ベースポータルがNoneでないことと、さとふるファイルがOKなことを確認
-        if selected_base_portal and satofuru_files_ok:
+        # 百選ファイルのペア存在チェック
+        is_hyakusen_present = '百選' in loaded_df_names
+        is_hyakusen_stock_present = '百選在庫' in loaded_df_names
+        hyakusen_files_ok = not (is_hyakusen_present ^ is_hyakusen_stock_present)
+        if not hyakusen_files_ok:
+             st.error("「百選」と「百選在庫」は両方同時にインポートする必要があります。ファイル選択を確認してください。")
+
+        # ベースポータルがNoneでないことと、さとふる・百選ファイルがOKなことを確認
+        if selected_base_portal and satofuru_files_ok and hyakusen_files_ok:
             
             # 選択された日付を 'YYYYMMDD' 形式の文字列に変換
             select_date_str = selected_date.strftime('%Y%m%d')
@@ -730,10 +832,7 @@ else:
                         st.error("定期便DB（スプレッドシート）の読み込みに失敗しました。")
                         st.stop()
                     
-                    df_product_db = get_product_data_from_gsheet(sheets_service)
-                    if df_product_db is None: # 取得失敗
-                        st.error("商品管理DB（スプレッドシート）の読み込みに失敗しました。")
-                        st.stop()
+                    # ★ 商品管理DBの読み込みを削除
                     
                     df_business = get_business_data_from_gsheet(sheets_service)
                     if df_business is None: # 取得失敗
@@ -797,23 +896,16 @@ else:
                     lookup_maps, parent_lookup_maps = {}, {}
 
                     # --- 楽天ステータス判定用のデータ準備 ---
-                    # H列(商品番号) -> G列(商品管理番号) の対応辞書を作成
-                    # ★ 変更: GSheetの「商品番号」も .upper() に統一
-                    df_product_db_copy = df_product_db.copy()
-                    df_product_db_copy['商品番号_upper'] = df_product_db_copy['商品番号'].astype(str).str.strip().str.upper()
-                    # 重複を除去
-                    df_product_db_copy = df_product_db_copy.dropna(subset=['商品番号_upper', '商品管理番号'])
-                    df_product_db_copy = df_product_db_copy.drop_duplicates(subset=['商品番号_upper'], keep='first')
-            
-                    memo_map = pd.Series(
-                        df_product_db_copy['商品管理番号'].values, 
-                        index=df_product_db_copy['商品番号_upper']
-                    ).to_dict()
+                    # ★ 商品管理DB廃止に伴い、memo_map も廃止（空辞書とする）
+                    memo_map = {}
 
                     # 楽天データから各種対応辞書を作成 (ヘッダー名で参照)
                     rakuten_product_id_map = {} # 商品番号 -> 行データ
                     rakuten_management_id_map = {} # 商品管理番号（商品URL） -> 行データ
                     rakuten_sku_code_map = {} # SKU管理番号 -> 行データ
+                    
+                    # ★ 【追加】楽天のグループマップ作成 (商品管理番号 -> 行リスト)
+                    rakuten_group_map = {}
 
                     if '楽天' in full_data:
                         df_rakuten = full_data['楽天']
@@ -822,8 +914,22 @@ else:
                         
                         # B列(商品番号) -> 行データ
                         if '商品番号' in df_rakuten_data.columns:
-                            df_rakuten_b = df_rakuten_data.dropna(subset=['商品番号']).drop_duplicates(subset=['商品番号'], keep='first')
-                            # ★ 変更: .upper() に統一
+                            # まず商品番号がある行を抽出
+                            df_rakuten_b = df_rakuten_data.dropna(subset=['商品番号']).copy()
+                            
+                            # ★ 追加: 優先順位付けロジック
+                            # 「システム連携用SKU番号」に値がある（空文字でない）行を優先（上に）する
+                            if 'システム連携用SKU番号' in df_rakuten_b.columns:
+                                # 値がある場合はTrue、なければFalse
+                                df_rakuten_b['is_priority'] = (df_rakuten_b['システム連携用SKU番号'].astype(str).str.strip() != '')
+                                
+                                # 優先フラグの降順（Trueが先）でソート
+                                df_rakuten_b = df_rakuten_b.sort_values(by='is_priority', ascending=False)
+                            
+                            # 重複排除 (ソート済みなので、優先行が残る)
+                            df_rakuten_b = df_rakuten_b.drop_duplicates(subset=['商品番号'], keep='first')
+                            
+                            # 辞書化
                             rakuten_product_id_map = {str(row['商品番号']).strip().upper(): row.to_dict() for _, row in df_rakuten_b.iterrows()}
                         
                         # A列(商品管理番号（商品URL）) -> 行データ
@@ -837,6 +943,14 @@ else:
                             df_rakuten_h = df_rakuten_data.dropna(subset=['SKU管理番号']).drop_duplicates(subset=['SKU管理番号'], keep='first')
                             # ★ 重要: SKU管理番号は厳密比較のため、.upper() しない (元のまま)
                             rakuten_sku_code_map = {str(row['SKU管理番号']).strip(): row.to_dict() for _, row in df_rakuten_h.iterrows()}
+                        
+                        # ★ 【追加】グループマップの構築
+                        if '商品管理番号（商品URL）' in df_rakuten_data.columns:
+                            for _, row in df_rakuten_data.iterrows():
+                                mid = str(row['商品管理番号（商品URL）']).strip().upper()
+                                if mid:
+                                    if mid not in rakuten_group_map: rakuten_group_map[mid] = []
+                                    rakuten_group_map[mid].append(row.to_dict())
                     
                     # --- 他ポータルのデータ準備 (lookup_maps 作成) ---
                     for name, df in full_data.items():
@@ -909,7 +1023,9 @@ else:
                                 memo_map=memo_map,
                                 rakuten_product_id_map=rakuten_product_id_map,
                                 rakuten_management_id_map=rakuten_management_id_map,
-                                rakuten_sku_code_map=rakuten_sku_code_map
+                                rakuten_sku_code_map=rakuten_sku_code_map,
+                                # ★ 【追加】楽天のグループマップを渡す
+                                rakuten_group_map=rakuten_group_map
                             ) for portal in uploaded_portals
                         }
                         

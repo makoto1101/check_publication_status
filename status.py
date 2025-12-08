@@ -117,25 +117,23 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
     # --- 楽天のステータス判定ロジック ---
     if portal == '楽天':
         # 外部から渡された辞書を取得
-        memo_map = kwargs.get('memo_map', {})
+        # memo_map = kwargs.get('memo_map', {}) # ★ 削除: DB参照廃止
         rakuten_product_id_map = kwargs.get('rakuten_product_id_map', {})
         rakuten_management_id_map = kwargs.get('rakuten_management_id_map', {})
         rakuten_sku_code_map = kwargs.get('rakuten_sku_code_map', {})
+        # ★ 【追加】グループマップを取得
+        rakuten_group_map = kwargs.get('rakuten_group_map', {})
 
         # A列(code)は引数で渡ってくるベースポータルの商品番号
         # app.py側で大文字化済みのため、そのまま (大文字)
         product_id = code
 
         # ■ Z列 (SKU親コード)
-        # product_id (大文字) で memo_map (キー大文字) を検索
-        sku_parent_code_raw = memo_map.get(product_id) # memo_map (GSheet) から取得
+        # product_id (大文字) で rakuten_product_id_map (キー大文字) を検索
+        product_row = rakuten_product_id_map.get(product_id)
+        sku_parent_code_raw = product_row.get("商品管理番号（商品URL）", "なし") if product_row else "なし"
         
-        if not sku_parent_code_raw:
-            # product_id (大文字) で rakuten_product_id_map (キー大文字) を検索
-            product_row = rakuten_product_id_map.get(product_id)
-            sku_parent_code_raw = product_row.get("商品管理番号（商品URL）", "なし") if product_row else "なし"
-        
-        # GSheet/フォールバック両方のキーを正規化
+        # キーを正規化
         # sku_parent_code は「生」のコード (大文字小文字混在)
         sku_parent_code = str(sku_parent_code_raw).strip() if sku_parent_code_raw and sku_parent_code_raw != "なし" else "なし"
 
@@ -146,24 +144,35 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         # ■ AH列 (在庫数) -> AE列
         stock_count_raw = ""
         # product_id (大文字) で検索
-        product_row = rakuten_product_id_map.get(product_id)
+        # product_row は上記で取得済み
         
-        # (ヘッダー名で参照)
-        if product_row and product_row.get("在庫数", "") != "":  # J列
+        # 1. まず商品番号で在庫数をチェック (J列)
+        if product_row and product_row.get("在庫数", "") != "":  
             stock_count_raw = product_row.get("在庫数")
+        
+        # 2. 値がない場合、グループ情報を用いたフォールバックチェック
         else:
-            # ユーザー要望(A列)に基づき、product_id (A列のコード) で SKU管理番号(H列) を検索
-            
-            # 1. product_id (大文字のコード、例: "AZA032") で厳密検索
-            sku_row = rakuten_sku_code_map.get(product_id)
-            
-            # 2. 見つからない場合、product_id を小文字 (例: "aza032") にして再検索
-            if not sku_row:
-                sku_row = rakuten_sku_code_map.get(product_id.lower())
+            # 商品管理番号（URL）をキーにしてグループを取得
+            target_group_key = sku_parent_code.upper()
+            group_rows = rakuten_group_map.get(target_group_key, [])
+            group_len = len(group_rows)
 
-            if sku_row:
-                stock_val = sku_row.get("在庫数", "") # J列
-                stock_count_raw = "在庫0" if stock_val == "0" else stock_val
+            if group_len == 2:
+                # グループが2件の場合、もう一方の行（すぐ下の行など）の在庫を参照する
+                # for gr in group_rows:
+                for gr in group_rows:
+                    # 自分自身（現在のproduct_id）でない行を探す
+                    g_code = str(gr.get('商品番号', '')).strip().upper()
+                    if g_code != product_id:
+                        val = gr.get('在庫数', '')
+                        if val != '':
+                            stock_count_raw = val
+                        break # 値が見つかれば終了（あるいは相方を確認したら終了）
+            
+            elif group_len >= 3:
+                # グループが3件以上の場合、在庫チェックをスキップする
+                # (= stock_count_raw は空文字のまま -> 後続の判定で "在庫0" にならない)
+                pass
         
         stock_status = "在庫0" if stock_count_raw == "0" or stock_count_raw == "在庫0" else stock_count_raw
 
@@ -201,13 +210,18 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
 
         # ■ AB列 (サーチ表示)
         search_display = ""
+        
+        # 親情報の管理行を取得
+        management_row = None
+        if sku_parent_code and sku_parent_code != "なし":
+             management_row = rakuten_management_id_map.get(sku_parent_code.upper())
+
         if not sku_parent_code or sku_parent_code == "なし":
             # product_row は L.151 で取得済み (product_id大文字)
             if product_row: 
                 search_display = product_row.get("サーチ表示", "") # E列
         else:
             # sku_parent_code (生) を .upper() して検索
-            management_row = rakuten_management_id_map.get(sku_parent_code.upper())
             if management_row: 
                 search_display = management_row.get("サーチ表示", "") # E列
 
@@ -217,8 +231,6 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         if product_row and product_row.get("販売期間指定（開始日時）", "") != "": # F列
             start_date_raw = product_row.get("販売期間指定（開始日時）")
         else:
-            # sku_parent_code (生) を .upper() して検索
-            management_row = rakuten_management_id_map.get(sku_parent_code.upper())
             if management_row: 
                 start_date_raw = management_row.get("販売期間指定（開始日時）", "")
 
@@ -227,8 +239,6 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         if product_row and product_row.get("販売期間指定（終了日時）", "") != "": # G列
             end_date_raw = product_row.get("販売期間指定（終了日時）")
         else:
-            # sku_parent_code (生) を .upper() して検索
-            management_row = rakuten_management_id_map.get(sku_parent_code.upper())
             if management_row: 
                 end_date_raw = management_row.get("販売期間指定（終了日時）", "")
             
@@ -259,39 +269,55 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         if is_hidden:
             return "非表示"
 
+        # 【5】注文ボタン (0なら未受付) ★追加
+        # (処理順序: サーチ表示の後、日付判定の前)
+        order_button_val = ""
+        if product_row and product_row.get("注文ボタン", "") != "":
+            order_button_val = product_row.get("注文ボタン")
+        else:
+            if management_row:
+                order_button_val = management_row.get("注文ボタン", "")
+
+        if order_button_val != "":
+            try:
+                if float(order_button_val) == 0:
+                    return "未受付"
+            except ValueError:
+                pass
+
         # --- 日付判定 ---
 
-        # 【5】販売期間設定なし：公開中
+        # 【6】販売期間設定なし：公開中
         if not start_date_formatted and not end_date_formatted:
             return "公開中"
 
-        # 【6】販売開始日時が未来：未受付
+        # 【7】販売開始日時が未来：未受付
         if start_date_formatted and start_date_formatted > select_date_str:
             return "未受付"
 
-        # 【7】販売終了日時なし：公開中
+        # 【8】販売終了日時なし：公開中
         # （開始済みで、かつ終了日がない場合）
         if not end_date_formatted:
             return "公開中"
 
-        # 【8】販売終了日時が過去：受付終了
+        # 【9】販売終了日時が過去：受付終了
         if end_date_formatted < select_date_str:
             return "受付終了"
 
-        # 【9】上記以外：公開中
+        # 【10】上記以外：公開中
         return "公開中"
 
     # --- さとふるのステータス判定ロジック ---
     if portal == 'さとふる':
         # --- データの準備 ---
-		# 1. メインファイル（さとふる）から「公開フラグ」「お礼品ID」を取得
+        # 1. メインファイル（さとふる）から「公開フラグ」「お礼品ID」を取得
         pub_flag = row.get('公開フラグ', '') if row else ''
         sato_id = row.get('お礼品ID', '') if row else ''
 
-		# 2. 在庫ファイル（さとふる在庫）の行データをIDで検索
+        # 2. 在庫ファイル（さとふる在庫）の行データをIDで検索
         stock_row = lookup_maps.get('さとふる在庫', {}).get(sato_id) if sato_id else None
 
-		# 3. 在庫ファイルから「在庫数」「日付」を取得
+        # 3. 在庫ファイルから「在庫数」「日付」を取得
         # （※stock_rowが取得できた場合のみ値を取り出す）
         stock_count = str(stock_row.get('全在庫数', '')) if stock_row else ''
         start_date = format_date(stock_row.get('受付開始日')) if stock_row else ''
@@ -620,6 +646,47 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             return '在庫0'
             
         # 3. 上記以外は「公開中」
+        return '公開中'
+
+    # --- 百選のステータス判定ロジック ---
+    if portal == '百選':
+        # 【1】返礼品コードなし：未登録
+        # (上位の汎用チェックで row がない場合は '未登録' になっているが、明示的なチェックが必要ならここで)
+        if not row: return '未登録'
+
+        # --- データの準備 ---
+        public_flag = get_val('百選', code, '公開フラグ')
+        pub_start = format_date(get_val('百選', code, '公開開始日時'))
+        pub_end = format_date(get_val('百選', code, '公開終了日時'))
+        apply_start = format_date(get_val('百選', code, '申込開始日時'))
+        apply_end = format_date(get_val('百選', code, '申込終了日時'))
+
+        # 在庫ファイル（百選在庫）のデータを取得
+        stock_count = get_val('百選在庫', code, '在庫数')
+
+        # 【2】公開フラグが 0：非表示
+        if public_flag == '0': return '非表示'
+
+        # 【3】在庫数が 0：在庫0
+        if stock_count == '0': return '在庫0'
+
+        # 【4】公開開始日時が未来：未受付
+        if pub_start and pub_start > select_date_str:
+            return '未受付'
+
+        # 【5】公開終了日時が過去：受付終了
+        if pub_end and pub_end < select_date_str:
+            return '受付終了'
+
+        # 【6】申込開始日時が未来：未受付
+        if apply_start and apply_start > select_date_str:
+            return '未受付'
+
+        # 【7】申込終了日時が過去：受付終了
+        if apply_end and apply_end < select_date_str:
+            return '受付終了'
+
+        # 上記以外：公開中
         return '公開中'
 
     return '未実装'
