@@ -140,8 +140,8 @@ def show_status_conditions():
         with tabs[1]:
             rows = ""
             rows += create_status_row("未登録", "【1】 SKU親コードなし", "ファイルまたはDBから商品管理番号(SKU親)が取得できない場合")
-            rows += create_status_row("在庫0", "【2】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
-            rows += create_status_row("倉庫", "【3】 倉庫指定あり", "SKU行または商品行の「倉庫指定」が <code>1</code> の場合")
+            rows += create_status_row("倉庫", "【2】 倉庫指定あり", "SKU行または商品行の「倉庫指定」が <code>1</code> の場合")
+            rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("非表示", "【4】 サーチ表示が 0", "「サーチ表示」が <code>0</code> の場合")
             rows += create_status_row("未受付", "【5】 注文ボタンが 0", "「注文ボタン」が <code>0</code> の場合")
             rows += create_status_row("公開中", "【6】 販売期間設定なし", "「販売期間指定（開始日時）」と「販売期間指定（終了日時）」が共に設定されていない場合")

@@ -203,10 +203,9 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             elif product_row_for_warehouse and product_row_for_warehouse.get("倉庫指定", "") == "1":
                 warehouse_status = "1"
         else:
-            # SKU行が見つからなかった場合 (ade007 のケース)
-            # 親行 (product_row_for_warehouse) が '倉庫指定=1' であっても、
-            # warehouse_status は "" のまま (「倉庫」として扱わない)
-            pass
+            # ★ 修正箇所: SKU行が見つからなくても、その行自体の「倉庫指定」を確認する
+            if product_row_for_warehouse and product_row_for_warehouse.get("倉庫指定", "") == "1":
+                warehouse_status = "1"
 
         # ■ AB列 (サーチ表示)
         search_display = ""
@@ -247,13 +246,15 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
 
         # --- ■ Y列 (最終ステータス判定) ---
         
-        # 【2】在庫0
-        if stock_status == "在庫0":
-            return "在庫0"
-
-        # 【3】倉庫
+        # ★ 修正: 「倉庫」チェックを「在庫数」より先に移動しました
+        
+        # 【2】倉庫
         if warehouse_status == "1":
             return "倉庫"
+
+        # 【3】在庫0
+        if stock_status == "在庫0":
+            return "在庫0"
 
         # 【4】非表示 (サーチ表示が0)
         # スプレッドシートの VALUE(AB4:AB)=0 に相当するロジック
