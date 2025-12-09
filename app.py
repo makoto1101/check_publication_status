@@ -385,7 +385,7 @@ else:
         if vendor_codes_to_filter:
             vendor_pattern = '|'.join(map(re.escape, vendor_codes_to_filter))
 
-        # --- 【改修】楽天の場合の特例処理 ---
+        # --- 楽天の場合の特例処理 ---
         if sheet_name == '楽天':
             # 必要な列の存在確認 (robust_read_file後のため通常はあるはずだが安全のためget)
             col_item_no = "商品番号"
@@ -625,6 +625,18 @@ else:
                     df = robust_read_file(file)
                     
                     if df is not None:
+                        # --- 英語版Amazonのヘッダー対応 ---
+                        if sheet_name == 'Amazon':
+                            # 英語版の小文字ヘッダーを日本語ヘッダーに置換
+                            amazon_rename_map = {
+                                'sku': '出品者SKU',
+                                'asin': 'ASIN',
+                                'price': '価格',
+                                'quantity': '数量'
+                            }
+                            # リネーム実行（列が存在しない場合は何もしない）
+                            df = df.rename(columns=amazon_rename_map)
+
                         # --- 【改修】楽天の処理 (必須列チェック & データ加工) ---
                         if sheet_name == '楽天':
                             # 1. 必須列チェック
