@@ -944,21 +944,100 @@ else:
                         # robust_read_fileでヘッダー処理済みのため、iloc[1:] は不要
                         df_rakuten_data = df_rakuten
                         
-                        # B列(商品番号) -> 行データ
+                        # ★「商品番号」列のソート -> 行データ
                         if '商品番号' in df_rakuten_data.columns:
                             # まず商品番号がある行を抽出
                             df_rakuten_b = df_rakuten_data.dropna(subset=['商品番号']).copy()
                             
-                            # ★ 追加: 優先順位付けロジック
-                            # 「システム連携用SKU番号」に値がある（空文字でない）行を優先（上に）する
+                            # --- 分割ソート ---
+
+                            # 1. SKU有無の判定（フラグ作成）
+                            # 「システム連携用SKU番号」に値がある（空文字でない）場合はTrue
                             if 'システム連携用SKU番号' in df_rakuten_b.columns:
-                                # 値がある場合はTrue、なければFalse
-                                df_rakuten_b['is_priority'] = (df_rakuten_b['システム連携用SKU番号'].astype(str).str.strip() != '')
-                                
-                                # 優先フラグの降順（Trueが先）でソート
-                                df_rakuten_b = df_rakuten_b.sort_values(by='is_priority', ascending=False)
+                                has_sku_mask = (df_rakuten_b['システム連携用SKU番号'].astype(str).str.strip() != '')
+                            else:
+                                has_sku_mask = pd.Series(False, index=df_rakuten_b.index)
+
+                            # --- ランク計算用ロジック（全行に対して計算だけ行う） ---
+                            # ※計算自体は全行に行うが、ソートに使うのはSKUありの行だけにする
+
+                            # 日付処理用の関数
+                            def _get_date_str(x):
+                                s = str(x).strip()
+                                return re.sub(r'[^0-9]', '', s)[:8]
+
+                            # 列名の定義
+                            col_warehouse = '倉庫指定' if '倉庫指定' in df_rakuten_b.columns else None
+                            col_search = 'サーチ表示' if 'サーチ表示' in df_rakuten_b.columns else None
+                            col_order = '注文ボタン' if '注文ボタン' in df_rakuten_b.columns else None
+                            col_start = '販売期間指定（開始日時）' if '販売期間指定（開始日時）' in df_rakuten_b.columns else None
+                            col_end = '販売期間指定（終了日時）' if '販売期間指定（終了日時）' in df_rakuten_b.columns else None
+                            col_stock = '在庫数' if '在庫数' in df_rakuten_b.columns else None
                             
-                            # 重複排除 (ソート済みなので、優先行が残る)
+                            current_date_str = TODAY_STR
+
+                            # 【1】「倉庫指定」: '0' が優先 -> 昇順
+                            def _calc_warehouse_rank(x):
+                                if col_warehouse and str(x).strip() == '0': return 0
+                                return 1
+                            df_rakuten_b['p_rank_1'] = df_rakuten_b[col_warehouse].apply(_calc_warehouse_rank) if col_warehouse else 1
+
+                            # 【2】「サーチ表示」: '1' が優先 -> 降順
+                            df_rakuten_b['p_rank_2'] = pd.to_numeric(df_rakuten_b[col_search], errors='coerce').fillna(0) if col_search else 0
+
+                            # 【3】「注文ボタン」: '1' が優先 -> 降順
+                            df_rakuten_b['p_rank_3'] = pd.to_numeric(df_rakuten_b[col_order], errors='coerce').fillna(0) if col_order else 0
+
+                            # 【4】「開始日時」
+                            s_start_dates = df_rakuten_b[col_start].apply(_get_date_str) if col_start else pd.Series('', index=df_rakuten_b.index)
+                            def _calc_start_cat(d):
+                                if not d: return 0      # ① 空
+                                if d <= current_date_str: return 1 # ② 過去
+                                return 2                # ③ 未来
+                            df_rakuten_b['p_rank_4_cat'] = s_start_dates.apply(_calc_start_cat)
+                            df_rakuten_b['p_rank_4_val'] = s_start_dates
+
+                            # 【5】「終了日時」
+                            s_end_dates = df_rakuten_b[col_end].apply(_get_date_str) if col_end else pd.Series('', index=df_rakuten_b.index)
+                            def _calc_end_cat(d):
+                                if not d: return 0      # ① 空
+                                if d >= current_date_str: return 1 # ② 未来
+                                return 2                # ③ 過去
+                            df_rakuten_b['p_rank_5_cat'] = s_end_dates.apply(_calc_end_cat)
+                            df_rakuten_b['p_rank_5_val'] = s_end_dates
+
+                            # 【6】「在庫数」: 多い方が優先 -> 降順
+                            df_rakuten_b['p_rank_6'] = pd.to_numeric(df_rakuten_b[col_stock], errors='coerce').fillna(0) if col_stock else 0
+
+                            # --- データの分割とソート ---
+                            
+                            # SKUありのグループ
+                            df_sku = df_rakuten_b[has_sku_mask].copy()
+                            # SKUなしのグループ
+                            df_no_sku = df_rakuten_b[~has_sku_mask].copy()
+
+                            # SKUありグループのみ、優先度順にソートする
+                            if not df_sku.empty:
+                                sort_columns = [
+                                    'p_rank_1',     # 【1】倉庫 (0優先 -> 昇順)
+                                    'p_rank_2',     # 【2】サーチ (1優先 -> 降順)
+                                    'p_rank_3',     # 【3】注文 (1優先 -> 降順)
+                                    'p_rank_4_cat', # 【4】開始区分 (空<過去<未来 -> 昇順)
+                                    'p_rank_4_val', # 【4】開始日値 (古い日付優先 -> 昇順)
+                                    'p_rank_5_cat', # 【5】終了区分 (空<未来<過去 -> 昇順)
+                                    'p_rank_5_val', # 【5】終了日値 (新しい日付優先 -> 降順)
+                                    'p_rank_6'      # 【6】在庫 (多い順 -> 降順)
+                                ]
+                                asc_settings = [True, False, False, True, True, True, False, False]
+                                df_sku = df_sku.sort_values(by=sort_columns, ascending=asc_settings)
+                            
+                            # SKUなしグループはソートしない（元のファイル順序を維持）
+                            # 何もしない
+
+                            # 結合（SKUありを上に）
+                            df_rakuten_b = pd.concat([df_sku, df_no_sku])
+
+                            # 重複排除 (keep='first'なので、SKUありが優先され、同グループ内ではソート上位/ファイル上位が残る)
                             df_rakuten_b = df_rakuten_b.drop_duplicates(subset=['商品番号'], keep='first')
                             
                             # 辞書化
