@@ -56,7 +56,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
     # チョイス系以外（ヘッダーあり）の場合、rowは { 'ヘッダー名1': '値1', ... }
     # チョイス系（ヘッダーなし）の場合、rowは { 0: '値0', 1: '値1', ... }
     
-    # ★ 変更: app.py側で code が .upper() されているため、大文字で検索
+    # app.py側で code が .upper() されているため、大文字で検索
     row = lookup_maps.get(portal, {}).get(code)
     
     # 楽天・さとふる以外は、row（=コードに対応する行データ）がなければ「未登録」
@@ -121,7 +121,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         rakuten_product_id_map = kwargs.get('rakuten_product_id_map', {})
         rakuten_management_id_map = kwargs.get('rakuten_management_id_map', {})
         rakuten_sku_code_map = kwargs.get('rakuten_sku_code_map', {})
-        # ★ 【追加】グループマップを取得
+        # グループマップを取得
         rakuten_group_map = kwargs.get('rakuten_group_map', {})
 
         # A列(code)は引数で渡ってくるベースポータルの商品番号
@@ -203,7 +203,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             elif product_row_for_warehouse and product_row_for_warehouse.get("倉庫指定", "") == "1":
                 warehouse_status = "1"
         else:
-            # ★ 修正箇所: SKU行が見つからなくても、その行自体の「倉庫指定」を確認する
+            # SKU行が見つからなくても、その行自体の「倉庫指定」を確認する
             if product_row_for_warehouse and product_row_for_warehouse.get("倉庫指定", "") == "1":
                 warehouse_status = "1"
 
@@ -245,8 +245,6 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         end_date_formatted = format_date(end_date_raw)
 
         # --- ■ Y列 (最終ステータス判定) ---
-        
-        # ★ 修正: 「倉庫」チェックを「在庫数」より先に移動しました
         
         # 【2】倉庫
         if warehouse_status == "1":

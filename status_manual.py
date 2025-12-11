@@ -126,21 +126,21 @@ def show_status_conditions():
             st.error("「チョイス」「チョイス在庫」ファイルはヘッダー項目がない為、列依存での判定となります。ファイルの列構成が変更された場合は、ステータス判定ロジックの修正が必要です。")
 
             rows = ""
-            rows += create_status_row("未登録", "【1】 掲載フラグ取得不可", "チョイスファイルにデータが存在しない、または「（必須）表示有無(CT列)」が空欄の場合")
-            rows += create_status_row("非表示", "【2】 表示有無が 0", "「表示有無(CT列)」の値が <code>0</code> の場合")
+            rows += create_status_row("未登録", "【1】 掲載フラグ取得不可", "チョイスファイルに該当の返礼品コードが存在しない、または「（必須）表示有無(CT列)」が<strong>空欄</strong>の場合")
+            rows += create_status_row("非表示", "【2】 表示有無が 0", "チョイスファイルの「表示有無(CT列)」の値が <code>0</code> の場合")
             rows += create_status_row("在庫0", "【3】 在庫数が 0", "チョイス在庫ファイルの「残り在庫数（D列）」が <code>0</code> の場合")
-            rows += create_status_row("公開中", "【4】 受付開始・終了なし", "「受付開始日時(CU列)」と「受付終了日時(CV列)」が共に設定されていない場合")
-            rows += create_status_row("未受付", "【5】 受付開始日時が未来", "「受付開始日時(CU列)」が、<strong>本日より後の日付</strong>の場合")
-            rows += create_status_row("公開中", "【6】 受付終了日時なし", "受付開始済みで、かつ「受付終了日時(CV列)」が空欄の場合")
-            rows += create_status_row("受付終了", "【7】 受付終了日時が過去", "「受付終了日時(CV列)」が、<strong>本日より前の日付</strong>の場合")
+            rows += create_status_row("公開中", "【4】 受付開始・終了なし", "チョイスファイルの「受付開始日時(CU列)」と「受付終了日時(CV列)」が共に設定されていない場合")
+            rows += create_status_row("未受付", "【5】 受付開始日時が未来", "チョイスファイルの「受付開始日時(CU列)」が、<strong>本日より後の日付</strong>の場合")
+            rows += create_status_row("公開中", "【6】 受付終了日時なし", "受付開始済みで、かつ チョイスファイルの「受付終了日時(CV列)」が<strong>空欄</strong>の場合")
+            rows += create_status_row("受付終了", "【7】 受付終了日時が過去", "チョイスファイルの「受付終了日時(CV列)」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【8】 上記以外", "期間内など、上記条件に該当しない場合")
             render_table(rows)
 
         # --- 楽天 ---
         with tabs[1]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 SKU親コードなし", "ファイルまたはDBから商品管理番号(SKU親)が取得できない場合")
-            rows += create_status_row("倉庫", "【2】 倉庫指定あり", "SKU行または商品行の「倉庫指定」が <code>1</code> の場合")
+            rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「商品番号」が存在しない場合")
+            rows += create_status_row("倉庫", "【2】 倉庫指定あり", "「倉庫指定」または 「SKU倉庫指定」が <code>1</code> の場合")
             rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("非表示", "【4】 サーチ表示が 0", "「サーチ表示」が <code>0</code> の場合")
             rows += create_status_row("未受付", "【5】 注文ボタンが 0", "「注文ボタン」が <code>0</code> の場合")
@@ -153,9 +153,9 @@ def show_status_conditions():
         # --- JAL ---
         with tabs[2]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 ステータス空欄", "ファイルの「ステータス」が空欄の場合")
+            rows += create_status_row("未登録", "【1】 ステータス空欄", "ファイルの「ステータス」が<strong>空欄</strong>の場合")
             rows += create_status_row("受付終了", "【2】 品切れ・受付終了", "ファイルの「ステータス」が <code>品切れ</code> または <code>受付終了</code> の場合")
-            rows += create_status_row("非表示", "【3】 表示設定が非表示", "ファイルの「表示設定」が <code>非表示</code> の場合")
+            rows += create_status_row("非表示", "【3】 表示設定が \"非表示\"", "ファイルの「表示設定」が <code>非表示</code> の場合")
             rows += create_status_row("在庫0", "【4】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合（※在庫設定なしを除く）")
             rows += create_status_row("未受付", "【5】 表示開始日時が未来", "「表示開始日時」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 表示終了日時が過去", "「表示終了日時」が、<strong>本日より前の日付</strong>の場合")
@@ -167,10 +167,10 @@ def show_status_conditions():
         # --- ふるなび ---
         with tabs[3]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 販売フラグ空欄", "ファイルの「販売フラグ」が空欄の場合")
-            rows += create_status_row("非表示", "【2】 フラグが off", "「販売フラグ」または「公開フラグ」が <code>off</code> の場合")
+            rows += create_status_row("未登録", "【1】 販売フラグが空欄", "ファイルの「販売フラグ」が<strong>空欄</strong>の場合")
+            rows += create_status_row("非表示", "【2】 フラグが \"off\"", "「販売フラグ」または「公開フラグ」が <code>off</code> の場合")
             rows += create_status_row("在庫0", "【3】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合")
-            rows += create_status_row("公開中", "【4】 公開期間設定なし", "「公開開始日」と「公開終了日」が共に空欄の場合")
+            rows += create_status_row("公開中", "【4】 公開期間設定なし", "「公開開始日」と「公開終了日」が共に<strong>空欄</strong>の場合")
             rows += create_status_row("未受付", "【5】 公開開始日時が未来", "「公開開始日」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 公開終了日時が過去", "「公開終了日」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【7】 上記以外", "期間内など、上記条件に該当しない場合")
@@ -179,10 +179,10 @@ def show_status_conditions():
         # --- ANA ---
         with tabs[4]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 状態(掲載フラグ)空欄", "ファイルの「状態(掲載フラグ)」が空欄の場合")
-            rows += create_status_row("非表示", "【2】 状態(掲載フラグ)が 1", "ファイルの「状態(掲載フラグ)」が <code>1</code> (非公開) の場合")
-            rows += create_status_row("在庫0", "【3】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合")
-            rows += create_status_row("公開中", "【4】 販売期間設定なし", "「販売開始日」と「販売終了日」が共に空欄の場合")
+            rows += create_status_row("未登録", "【1】 状態(掲載フラグ)が空欄", "「状態(掲載フラグ)」が<strong>空欄</strong>の場合")
+            rows += create_status_row("非表示", "【2】 状態(掲載フラグ)が 1", "「状態(掲載フラグ)」が <code>1</code> (非公開) の場合")
+            rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("公開中", "【4】 販売期間設定なし", "「販売開始日」と「販売終了日」が共に<strong>空欄</strong>の場合")
             rows += create_status_row("未受付", "【5】 販売開始日が未来", "「販売開始日」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 販売終了日が過去", "「販売終了日」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【7】 上記以外", "期間内など、上記条件に該当しない場合")
@@ -191,10 +191,10 @@ def show_status_conditions():
         # --- まいふる ---
         with tabs[5]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 ステータス空欄", "ファイルの「ステータス」が空欄の場合")
-            rows += create_status_row("受付終了", "【2】 売り切れ・受付終了", "ファイルの「ステータス」が <code>売り切れ</code> または <code>受付終了</code> の場合")
-            rows += create_status_row("非表示", "【3】 状態が非表示", "ファイルの「状態」が <code>非表示</code> の場合")
-            rows += create_status_row("在庫0", "【4】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("未登録", "【1】 ステータスが空欄", "「ステータス」が<strong>空欄</strong>の場合")
+            rows += create_status_row("受付終了", "【2】ステータスが \"売り切れ\" または\"受付終了\"", "「ステータス」が <code>売り切れ</code> または <code>受付終了</code> の場合")
+            rows += create_status_row("非表示", "【3】 状態が \"非表示\"", "「状態」が <code>非表示</code> の場合")
+            rows += create_status_row("在庫0", "【4】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("未受付", "【5】 表示開始日時が未来", "「表示開始日時」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 表示終了日時が過去", "「表示終了日時」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("未受付", "【7】 寄附開始日時が未来", "「寄附開始日時」が、<strong>本日より後の日付</strong>の場合")
@@ -205,10 +205,10 @@ def show_status_conditions():
         # --- マイナビ ---
         with tabs[6]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 ステータス空欄", "ファイルの「ステータス」が空欄の場合")
-            rows += create_status_row("受付終了", "【2】 売り切れ・受付終了", "ファイルの「ステータス」が <code>売り切れ</code> または <code>受付終了</code> の場合")
-            rows += create_status_row("非表示", "【3】 表示設定が非表示", "ファイルの「表示設定」が <code>非表示</code> の場合")
-            rows += create_status_row("在庫0", "【4】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("未登録", "【1】 ステータスが空欄", "「ステータス」が<strong>空欄</strong>の場合")
+            rows += create_status_row("受付終了", "【2】 ステータスが \"売り切れ\" または\"受付終了\"", "「ステータス」が <code>売り切れ</code> または <code>受付終了</code> の場合")
+            rows += create_status_row("非表示", "【3】 表示設定が\"非表示\"", "「表示設定」が <code>非表示</code> の場合")
+            rows += create_status_row("在庫0", "【4】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("未受付", "【5】 表示開始日時が未来", "「表示開始日時」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 表示終了日時が過去", "「表示終了日時」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("未受付", "【7】 寄附開始日時が未来", "「寄附開始日時」が、<strong>本日より後の日付</strong>の場合")
@@ -219,10 +219,10 @@ def show_status_conditions():
         # --- プレミアム ---
         with tabs[7]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 公開ステータス空欄", "ファイルの「公開ステータス」が空欄（または該当SKUなし）の場合")
-            rows += create_status_row("非表示", "【2】 非公開/下書き", "ファイルの「公開ステータス」が <code>非公開/下書き</code> の場合")
-            rows += create_status_row("在庫0", "【3】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合")
-            rows += create_status_row("公開中", "【4】 公開期間設定なし", "「公開開始日時」と「公開終了日時」が共に空欄の場合")
+            rows += create_status_row("未登録", "【1】 公開ステータスが空欄", "「公開ステータス」が<strong>空欄（または該当SKUなし）</strong>の場合")
+            rows += create_status_row("非表示", "【2】 公開ステータスが \"非公開/下書き\"", "「公開ステータス」が <code>非公開/下書き</code> の場合")
+            rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("公開中", "【4】 公開期間設定なし", "「公開開始日時」と「公開終了日時」が共に<strong>空欄</strong>の場合")
             rows += create_status_row("未受付", "【5】 公開開始日時が未来", "「公開開始日時」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 公開終了日時が過去", "「公開終了日時」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【7】 上記以外", "ステータスが「公開」で、在庫・期間の条件をクリアした場合")
@@ -232,9 +232,9 @@ def show_status_conditions():
         with tabs[8]:
             rows = ""
             rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「品番1」が存在しない場合")
-            rows += create_status_row("非表示", "【2】 掲載NG / 期間外", "ステータスが「掲載不可」、または「掲載期間」が範囲外の場合")
-            rows += create_status_row("在庫0", "【3】 在庫数が 0", "在庫種別が「無制限」以外で、かつ「在庫数」が <code>0</code> の場合")
-            rows += create_status_row("公開中", "【4】 販売期間設定なし", "「販売期間(開始)」と「販売期間(終了)」が共に空欄の場合")
+            rows += create_status_row("非表示", "【2】 掲載不可 / 掲載期間外", "「掲載ステータス」が<code>掲載不可</code>、または「掲載期間」が<strong>範囲外</strong>の場合")
+            rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫扱いの種別」が<code>無制限</code>以外で、かつ「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("公開中", "【4】 販売期間設定なし", "「販売期間(開始)」と「販売期間(終了)」が共に<strong>空欄</strong>の場合")
             rows += create_status_row("未受付", "【5】 販売期間(開始)が未来", "「販売期間(開始)」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 販売期間(終了)が過去", "「販売期間(終了)」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【7】 上記以外", "すべての条件をクリアした場合")
@@ -246,7 +246,7 @@ def show_status_conditions():
             rows += create_status_row("未登録", "【1】 返礼品コードなし", "さとふる/さとふる在庫ファイルに該当のコードが存在しない場合")
             rows += create_status_row("非表示", "【2】 公開フラグが 2", "さとふるファイルの「公開フラグ」が <code>2</code> の場合")
             rows += create_status_row("在庫0", "【3】 全在庫数が 0", "さとふる在庫ファイルの「全在庫数」が <code>0</code> の場合")
-            rows += create_status_row("公開中", "【4】 受付期間設定なし", "「受付開始日」と「受付終了日」が共に空欄の場合")
+            rows += create_status_row("公開中", "【4】 受付期間設定なし", "「受付開始日」と「受付終了日」が共に<strong>空欄</strong>の場合")
             rows += create_status_row("未受付", "【5】 受付開始日が未来", "さとふる在庫ファイルの「受付開始日」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【6】 受付終了日が過去", "さとふる在庫ファイルの「受付終了日」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【7】 上記以外", "期間内など、上記条件に該当しない場合")
@@ -255,8 +255,8 @@ def show_status_conditions():
         # --- Amazon ---
         with tabs[10]:
             rows = ""
-            rows += create_status_row("未登録", "【1】 SKUなし", "ファイルに該当の「出品者SKU」が存在しない場合")
-            rows += create_status_row("在庫0", "【2】 数量が 0", "ファイルの「数量」が <code>0</code> の場合")
+            rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「出品者SKU」が存在しない場合")
+            rows += create_status_row("在庫0", "【2】 数量が 0", "「数量」が <code>0</code> の場合")
             rows += create_status_row("公開中", "【3】 上記以外", "行が存在し、「数量」が1以上の場合")
             render_table(rows)
 
@@ -264,8 +264,8 @@ def show_status_conditions():
         with tabs[11]:
             rows = ""
             rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「返礼品コード」が存在しない場合")
-            rows += create_status_row("非表示", "【2】 公開フラグが 0", "ファイルの「公開フラグ」が <code>0</code> の場合")
-            rows += create_status_row("在庫0", "【3】 在庫数が 0", "ファイルの「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("非表示", "【2】 公開フラグが 0", "「公開フラグ」が <code>0</code> の場合")
+            rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("未受付", "【4】 公開開始日時が未来", "「公開開始日時」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【5】 公開終了日時が過去", "「公開終了日時」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("未受付", "【6】 申込開始日時が未来", "「申込開始日時」が、<strong>本日より後の日付</strong>の場合")
