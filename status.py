@@ -59,8 +59,9 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
     # app.py側で code が .upper() されているため、大文字で検索
     row = lookup_maps.get(portal, {}).get(code)
     
-    # 楽天・さとふる以外は、row（=コードに対応する行データ）がなければ「未登録」
-    if not row and portal not in ['楽天', 'さとふる']: 
+    # 楽天・さとふる・ぐるなび以外は、row（=コードに対応する行データ）がなければ「未登録」
+    # ※ぐるなびはロジック内で個別に row チェックを行うため、ここでは対象外とする（または下記ロジックで対応）
+    if not row and portal not in ['楽天', 'さとふる', 'ぐるなび']: 
         return '未登録'
 
     # --- チョイスのステータス判定ロジック ---
@@ -683,6 +684,47 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
 
         # 【7】申込終了日時が過去：受付終了
         if apply_end and apply_end < select_date_str:
+            return '受付終了'
+
+        # 上記以外：公開中
+        return '公開中'
+
+    # --- ぐるなびのステータス判定ロジック ---
+    if portal == 'ぐるなび':
+        # 【1】返礼品コードなし：未登録
+        # (上位の汎用チェックで row がない場合は '未登録' になっているが、明示的なチェックが必要ならここで)
+        if not row: return '未登録'
+
+        # --- データの準備 ---
+        public_setting = get_val('ぐるなび', code, '公開設定')
+        stock_setting = get_val('ぐるなび', code, '在庫設定')
+        stock_count = get_val('ぐるなび', code, '在庫数')
+
+        pub_start = format_date(get_val('ぐるなび', code, '公開開始指定日時'))
+        pub_end = format_date(get_val('ぐるなび', code, '公開終了指定日時'))
+        sales_start = format_date(get_val('ぐるなび', code, '販売期間指定(開始日時)'))
+        sales_end = format_date(get_val('ぐるなび', code, '販売期間指定(終了日時)'))
+
+        # 【2】表示設定が "非表示"：非表示 ("公開設定"が0の場合)
+        if str(public_setting) == '0': return '非表示'
+
+        # 【3】在庫数が 0：在庫0 ("在庫設定"が0ではなく、「在庫数」が0の場合)
+        if str(stock_setting) != '0' and str(stock_count) == '0': return '在庫0'
+
+        # 【4】公開開始指定日時が未来：未受付
+        if pub_start and pub_start > select_date_str:
+            return '未受付'
+
+        # 【5】公開終了指定日時が過去：受付終了
+        if pub_end and pub_end < select_date_str:
+            return '受付終了'
+
+        # 【6】販売期間指定(開始日時)が未来：未受付
+        if sales_start and sales_start > select_date_str:
+            return '未受付'
+
+        # 【7】販売期間指定(終了日時)が過去：受付終了
+        if sales_end and sales_end < select_date_str:
             return '受付終了'
 
         # 上記以外：公開中

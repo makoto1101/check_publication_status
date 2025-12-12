@@ -248,7 +248,8 @@ else:
         "さとふる在庫": "お礼品ID", # 既存ロジック(index 1)とヘッダーリストを照合
         "Amazon": "出品者SKU", # 既存ロジック(index 0)とヘッダーリストを照合
         "百選": "返礼品コード",
-        "百選在庫": "返礼品コード"
+        "百選在庫": "返礼品コード",
+        "ぐるなび": "商品番号"
     }
 
     # 返礼品「名称」列の定義（チョイス系はインデックス番号、他はヘッダー名）
@@ -267,10 +268,11 @@ else:
         "JRE": "商品名",
         "さとふる": "お礼品名", # 既存ロジック(index 1)とヘッダーリストを照合
         "Amazon": None,
-        "百選": "返礼品名称"
+        "百選": "返礼品名称",
+        "ぐるなび": "商品名"
     }
 
-    PORTAL_ORDER = ['チョイス', '楽天', 'ANA', 'ふるなび', 'JAL', 'まいふる', 'マイナビ', 'プレミアム', 'JRE', 'さとふる', 'Amazon', '百選']
+    PORTAL_ORDER = ['チョイス', '楽天', 'ANA', 'ふるなび', 'JAL', 'まいふる', 'マイナビ', 'プレミアム', 'JRE', 'さとふる', 'Amazon', '百選', 'ぐるなび']
     # TODAY_STR は L23 で定義
 
     # フィルタリングをスキップするシートのリスト
@@ -299,7 +301,10 @@ else:
         if 'amazon' in name_lower: return 'Amazon'
         if '百選在庫' in name_lower: return '百選在庫'
         if '百選' in name_lower: return '百選'
-        return re.sub(r'\.(csv|tsv|xlsx|txt)$', '', filename, flags=re.IGNORECASE)
+        if 'ぐるなび' in name_lower: return 'ぐるなび'
+        
+        # ポータル名を特定できない場合は None を返す（インポート対象外）
+        return None
 
     def robust_read_file(uploaded_file):
         """
@@ -581,26 +586,42 @@ else:
         # ファイルがアップロードされたら、すぐに読み込んで前処理を行う
         if any(all_uploaded_files):
 
-            # 1. ポータル名の重複チェック (事前チェック)
+            # 1. ポータル名の重複チェック & ポータル名特定チェック (事前チェック)
             portal_to_file_map = {} # キー: sheet_name, 値: file.name
-            files_to_reject = []    # 拒否対象のファイル情報 (タプルのリスト)
+            files_to_reject_duplicate = []    # 重複拒否対象
+            files_to_reject_unknown = []      # 特定不可拒否対象
 
             for file in all_uploaded_files:
                 if file: # ファイルがNoneでないことを確認
                     sheet_name = get_sheet_name_from_filename(file.name)
                     
+                    # ポータル名特定不可の場合
+                    if sheet_name is None:
+                         files_to_reject_unknown.append(file.name)
+                         continue # 以降の処理をスキップ
+
                     if sheet_name in portal_to_file_map:
                         # 重複検出: このファイルは拒否リストへ
                         original_file_name = portal_to_file_map[sheet_name]
-                        files_to_reject.append((file.name, sheet_name, original_file_name))
+                        files_to_reject_duplicate.append((file.name, sheet_name, original_file_name))
                     else:
                         # 新規ポータル: 処理対象リストに追加
                         portal_to_file_map[sheet_name] = file.name
                         files_to_process.append(file)
 
-            # 2. 拒否されたファイルのエラーメッセージを表示
-            if files_to_reject:
-                for file_name, portal_name, original_file_name in files_to_reject:
+            # 2. エラーメッセージの表示
+            
+            # (A) 特定できなかったファイルのエラー
+            if files_to_reject_unknown:
+                error_msg = "⚠️ **以下のファイルはポータル名を特定できなかったため、インポートされませんでした。**\n\n"
+                error_msg += "ファイル名に正しいポータル名（例: 楽天, チョイス, etc.）が含まれているか確認してください。\n"
+                for f_name in files_to_reject_unknown:
+                    error_msg += f"- {f_name}\n"
+                st.error(error_msg)
+
+            # (B) 重複したファイルのエラー
+            if files_to_reject_duplicate:
+                for file_name, portal_name, original_file_name in files_to_reject_duplicate:
                     st.error(f"⚠️ **{file_name}** はインポートされませんでした。**'{portal_name}'** ポータルは既に **{original_file_name}** によって使用されています。")
 
             # ★ トースト表示用のフラグを初期化
@@ -637,7 +658,7 @@ else:
                             # リネーム実行（列が存在しない場合は何もしない）
                             df = df.rename(columns=amazon_rename_map)
 
-                        # --- 【改修】楽天の処理 (必須列チェック & データ加工) ---
+                        # --- 楽天の処理 (必須列チェック & データ加工) ---
                         if sheet_name == '楽天':
                             # 1. 必須列チェック
                             required_columns = {
@@ -678,7 +699,7 @@ else:
                             df = filter_dataframe(df, sheet_name, item_codes_list, vendor_codes_list)
                         
                         st.session_state.dataframes[sheet_name] = df
-                        st.session_state.dataframes[file_key] = current_metadata # ★ 変更: メタデータを保存
+                        st.session_state.dataframes[file_key] = current_metadata # メタデータを保存
 
                         new_file_processed = True # ★ 新規ファイル処理フラグを立てる
 
@@ -726,7 +747,7 @@ else:
 
         # --- インポートされたファイルのプレビュー Expander ---
         # session_state.dataframes にファイルID以外のキーが存在するか確認
-        # ★ 変更: _id -> _metadata
+        # _id -> _metadata
         processed_dataframes_exist = any(not k.endswith('_metadata') for k in st.session_state.dataframes)
 
         # 処理済みのデータフレームが存在する場合のみ Expander を表示
@@ -753,7 +774,7 @@ else:
         st.markdown('<p style="font-size: 14px; margin-top: 10px; margin-bottom: 5px;">選択されたポータルと基準日を元に掲載状況を表示します。</p>', unsafe_allow_html=True)
 
         # インポートされたポータル名のリストを取得
-        # ★ 変更: _id -> _metadata
+        # _id -> _metadata
         uploaded_portal_names = [p for p in PORTAL_ORDER if p in st.session_state.dataframes and not p.endswith('_metadata')]
 
         # ファイルがアップロードされているかどうかのフラグ
@@ -815,16 +836,16 @@ else:
 
 
     # --- メインページUIセクション ---
-    # ★ 条件式を変更: ボタンの戻り値ではなく、セッションステートのフラグで判定
+    # ボタンの戻り値ではなく、セッションステートのフラグで判定
     if st.session_state.is_running:
         # スプレッドシートクライアントが正常かチェック
         if sheets_service is None:
             st.error("Googleスプレッドシートに接続できません。認証設定を確認してください。")
-            st.session_state.is_running = False # ★ 停止する前にフラグを戻す
+            st.session_state.is_running = False # 停止する前にフラグを戻す
             st.stop()
             
         # 処理実行前のバリデーションチェック
-        # ★ 変更: _id -> _metadata
+        # _id -> _metadata
         loaded_df_names = {k for k in st.session_state.dataframes if not k.endswith('_metadata')}
         
         # ベースポータルが選択されているか

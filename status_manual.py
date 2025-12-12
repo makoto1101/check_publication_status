@@ -115,10 +115,10 @@ def show_status_conditions():
         st.info("各ポータルのステータスは、以下の優先順位（番号順）で判定され、条件に合致した時点で確定します。")
 
         # ポータルごとにタブを分けて表示
-        # 順番: チョイス, 楽天, JAL, ふるなび, ANA, まいふる, マイナビ, プレミアム, JRE, さとふる, Amazon, 百選
+        # 順番: チョイス, 楽天, JAL, ふるなび, ANA, まいふる, マイナビ, プレミアム, JRE, さとふる, Amazon, 百選, ぐるなび
         tabs = st.tabs([
             "チョイス", "楽天", "JAL", "ふるなび", "ANA", 
-            "まいふる", "マイナビ", "プレミアム", "JRE", "さとふる", "Amazon", "百選"
+            "まいふる", "マイナビ", "プレミアム", "JRE", "さとふる", "Amazon", "百選", "ぐるなび"
         ])
 
         # --- チョイス ---
@@ -270,5 +270,18 @@ def show_status_conditions():
             rows += create_status_row("受付終了", "【5】 公開終了日時が過去", "「公開終了日時」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("未受付", "【6】 申込開始日時が未来", "「申込開始日時」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【7】 申込終了日時が過去", "「申込終了日時」が、<strong>本日より前の日付</strong>の場合")
+            rows += create_status_row("公開中", "【8】 上記以外", "すべての条件をクリアした場合")
+            render_table(rows)
+
+        # --- ぐるなび ---
+        with tabs[12]:
+            rows = ""
+            rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「商品番号」が存在しない場合")
+            rows += create_status_row("非表示", "【2】 公開設定が 0", "「公開設定」が <code>0</code> の場合")
+            rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫設定」が <code>0</code> ではなく、かつ「在庫数」が <code>0</code> の場合")
+            rows += create_status_row("未受付", "【4】 公開開始日時が未来", "「公開開始指定日時」が、<strong>本日より後の日付</strong>の場合")
+            rows += create_status_row("受付終了", "【5】 公開終了日時が過去", "「公開終了指定日時」が、<strong>本日より前の日付</strong>の場合")
+            rows += create_status_row("未受付", "【6】 販売開始日時が未来", "「販売期間指定(開始日時)」が、<strong>本日より後の日付</strong>の場合")
+            rows += create_status_row("受付終了", "【7】 販売終了日時が過去", "「販売期間指定(終了日時)」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【8】 上記以外", "すべての条件をクリアした場合")
             render_table(rows)
