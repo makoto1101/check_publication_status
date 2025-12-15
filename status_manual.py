@@ -180,7 +180,7 @@ def show_status_conditions():
         with tabs[4]:
             rows = ""
             rows += create_status_row("未登録", "【1】 状態(掲載フラグ)が空欄", "「状態(掲載フラグ)」が<strong>空欄</strong>の場合")
-            rows += create_status_row("非表示", "【2】 状態(掲載フラグ)が 1", "「状態(掲載フラグ)」が <code>1</code> (非公開) の場合")
+            rows += create_status_row("非表示", "【2】 状態(掲載フラグ)が 1 または 9", "「状態(掲載フラグ)」が <code>1</code> (非公開) または <code>9</code> (終息) の場合")
             rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("公開中", "【4】 販売期間設定なし", "「販売開始日」と「販売終了日」が共に<strong>空欄</strong>の場合")
             rows += create_status_row("未受付", "【5】 販売開始日が未来", "「販売開始日」が、<strong>本日より後の日付</strong>の場合")
@@ -283,5 +283,5 @@ def show_status_conditions():
             rows += create_status_row("受付終了", "【5】 公開終了日時が過去", "「公開終了指定日時」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("未受付", "【6】 販売開始日時が未来", "「販売期間指定(開始日時)」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【7】 販売終了日時が過去", "「販売期間指定(終了日時)」が、<strong>本日より前の日付</strong>の場合")
-            rows += create_status_row("公開中", "【8】 上記以外", "すべての条件をクリアした場合")
+            rows += create_status_row("公開中", "【8】 上記以外", "すべてのステータス・在庫・期間の条件をクリアした場合")
             render_table(rows)

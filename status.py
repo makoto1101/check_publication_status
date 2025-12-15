@@ -118,7 +118,6 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
     # --- 楽天のステータス判定ロジック ---
     if portal == '楽天':
         # 外部から渡された辞書を取得
-        # memo_map = kwargs.get('memo_map', {}) # ★ 削除: DB参照廃止
         rakuten_product_id_map = kwargs.get('rakuten_product_id_map', {})
         rakuten_management_id_map = kwargs.get('rakuten_management_id_map', {})
         rakuten_sku_code_map = kwargs.get('rakuten_sku_code_map', {})
@@ -160,7 +159,6 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
 
             if group_len == 2:
                 # グループが2件の場合、もう一方の行（すぐ下の行など）の在庫を参照する
-                # for gr in group_rows:
                 for gr in group_rows:
                     # 自分自身（現在のproduct_id）でない行を探す
                     g_code = str(gr.get('商品番号', '')).strip().upper()
@@ -269,7 +267,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         if is_hidden:
             return "非表示"
 
-        # 【5】注文ボタン (0なら未受付) ★追加
+        # 【5】注文ボタン (0なら未受付)
         # (処理順序: サーチ表示の後、日付判定の前)
         order_button_val = ""
         if product_row and product_row.get("注文ボタン", "") != "":
@@ -408,7 +406,8 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         # 【1】未登録
         if status_flag == '': return '未登録'
         # 【2】非表示
-        if status_flag == '1': return '非表示'
+        # 1(非公開) または 9(終息) の場合
+        if status_flag == '1' or status_flag == '9': return '非表示'
         # 【3】在庫0
         if stock_status == '在庫0': return '在庫0'
         

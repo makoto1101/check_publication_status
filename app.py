@@ -699,7 +699,7 @@ else:
                             df = filter_dataframe(df, sheet_name, item_codes_list, vendor_codes_list)
                         
                         st.session_state.dataframes[sheet_name] = df
-                        st.session_state.dataframes[file_key] = current_metadata # メタデータを保存
+                        st.session_state.dataframes[file_key] = current_metadata # ★ 変更: メタデータを保存
 
                         new_file_processed = True # ★ 新規ファイル処理フラグを立てる
 
@@ -747,7 +747,7 @@ else:
 
         # --- インポートされたファイルのプレビュー Expander ---
         # session_state.dataframes にファイルID以外のキーが存在するか確認
-        # _id -> _metadata
+        # ★ 変更: _id -> _metadata
         processed_dataframes_exist = any(not k.endswith('_metadata') for k in st.session_state.dataframes)
 
         # 処理済みのデータフレームが存在する場合のみ Expander を表示
@@ -774,7 +774,7 @@ else:
         st.markdown('<p style="font-size: 14px; margin-top: 10px; margin-bottom: 5px;">選択されたポータルと基準日を元に掲載状況を表示します。</p>', unsafe_allow_html=True)
 
         # インポートされたポータル名のリストを取得
-        # _id -> _metadata
+        # ★ 変更: _id -> _metadata
         uploaded_portal_names = [p for p in PORTAL_ORDER if p in st.session_state.dataframes and not p.endswith('_metadata')]
 
         # ファイルがアップロードされているかどうかのフラグ
@@ -836,16 +836,16 @@ else:
 
 
     # --- メインページUIセクション ---
-    # ボタンの戻り値ではなく、セッションステートのフラグで判定
+    # ★ 条件式を変更: ボタンの戻り値ではなく、セッションステートのフラグで判定
     if st.session_state.is_running:
         # スプレッドシートクライアントが正常かチェック
         if sheets_service is None:
             st.error("Googleスプレッドシートに接続できません。認証設定を確認してください。")
-            st.session_state.is_running = False # 停止する前にフラグを戻す
+            st.session_state.is_running = False # ★ 停止する前にフラグを戻す
             st.stop()
             
         # 処理実行前のバリデーションチェック
-        # _id -> _metadata
+        # ★ 変更: _id -> _metadata
         loaded_df_names = {k for k in st.session_state.dataframes if not k.endswith('_metadata')}
         
         # ベースポータルが選択されているか
@@ -1057,6 +1057,9 @@ else:
 
                             # 結合（SKUありを上に）
                             df_rakuten_b = pd.concat([df_sku, df_no_sku])
+
+                            # ★ 重複排除の前に、商品番号を大文字化して同一キーとみなさせる
+                            df_rakuten_b['商品番号'] = df_rakuten_b['商品番号'].astype(str).str.strip().str.upper()
 
                             # 重複排除 (keep='first'なので、SKUありが優先され、同グループ内ではソート上位/ファイル上位が残る)
                             df_rakuten_b = df_rakuten_b.drop_duplicates(subset=['商品番号'], keep='first')
