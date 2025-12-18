@@ -646,7 +646,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             
         # 3. 上記以外は「公開中」
         return '公開中'
-
+    
     # --- 百選のステータス判定ロジック ---
     if portal == '百選':
         # 【1】返礼品コードなし：未登録
@@ -727,6 +727,23 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             return '受付終了'
 
         # 上記以外：公開中
+        return '公開中'
+    
+    # --- あとギフのステータス判定ロジック ---
+    if portal == 'あとギフ':
+        # 指定された列名を使用
+        target_col = '表示有無 (表示させる場合は半角数字の1、非表示にする場合は半角数字の0)'
+        public_setting = get_val('あとギフ', code, target_col)
+        
+        # 数値・文字列・小数のゆらぎを考慮して判定
+        s_val = str(public_setting).strip()
+        
+        if s_val == '0' or s_val == '0.0':
+            return '非表示'
+        elif s_val == '1' or s_val == '1.0':
+            return '公開中'
+            
+        # それ以外の場合は公開中として扱う（あるいはデフォルト値）
         return '公開中'
 
     return '未実装'

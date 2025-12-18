@@ -118,7 +118,8 @@ def show_status_conditions():
         # 順番: チョイス, 楽天, JAL, ふるなび, ANA, まいふる, マイナビ, プレミアム, JRE, さとふる, Amazon, 百選, ぐるなび
         tabs = st.tabs([
             "チョイス", "楽天", "JAL", "ふるなび", "ANA", 
-            "まいふる", "マイナビ", "プレミアム", "JRE", "さとふる", "Amazon", "百選", "ぐるなび"
+            "まいふる", "マイナビ", "プレミアム", "JRE", "さとふる", "Amazon", "百選", "ぐるなび",
+            "あとギフ"
         ])
 
         # --- チョイス ---
@@ -284,4 +285,12 @@ def show_status_conditions():
             rows += create_status_row("未受付", "【6】 販売開始日時が未来", "「販売期間指定(開始日時)」が、<strong>本日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【7】 販売終了日時が過去", "「販売期間指定(終了日時)」が、<strong>本日より前の日付</strong>の場合")
             rows += create_status_row("公開中", "【8】 上記以外", "すべてのステータス・在庫・期間の条件をクリアした場合")
+            render_table(rows)
+
+        # --- あとギフ ---
+        with tabs[13]:
+            rows = ""
+            rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「返礼品コード」が存在しない場合")
+            rows += create_status_row("非表示", "【2】 表示有無が 0", "ファイルの「表示有無」の値が <code>0</code> の場合")
+            rows += create_status_row("公開中", "【3】 上記以外（表示有無が 1）", "ファイルの「表示有無」の値が <code>1</code> の場合")
             render_table(rows)

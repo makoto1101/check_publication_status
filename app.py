@@ -236,6 +236,7 @@ else:
         "チョイス在庫": 0,
         
         # (ヘッダーあり: ヘッダー名)
+        "あとギフ": "返礼品コード",
         "楽天": "商品番号",
         "ANA": "返礼品識別コード",
         "ふるなび": "外部返礼品コード", # 既存ロジック(index 19)とヘッダーリストを照合
@@ -258,6 +259,7 @@ else:
         "チョイス": 2,
         
         # (ヘッダーあり: ヘッダー名)
+        "あとギフ": "返礼品名*",
         "楽天": "商品名",
         "ANA": "返礼品名",
         "ふるなび": "返礼品名",
@@ -272,7 +274,7 @@ else:
         "ぐるなび": "商品名"
     }
 
-    PORTAL_ORDER = ['チョイス', '楽天', 'ANA', 'ふるなび', 'JAL', 'まいふる', 'マイナビ', 'プレミアム', 'JRE', 'さとふる', 'Amazon', '百選', 'ぐるなび']
+    PORTAL_ORDER = ['チョイス', '楽天', 'ANA', 'ふるなび', 'JAL', 'まいふる', 'マイナビ', 'プレミアム', 'JRE', 'さとふる', 'Amazon', '百選', 'ぐるなび', 'あとギフ']
     # TODAY_STR は L23 で定義
 
     # フィルタリングをスキップするシートのリスト
@@ -286,6 +288,7 @@ else:
     def get_sheet_name_from_filename(filename):
         """ファイル名からシート名を推測する"""
         name_lower = filename.lower()
+        if 'あとギフ' in name_lower: return 'あとギフ'
         if 'チョイス在庫' in name_lower: return 'チョイス在庫'
         if 'チョイス' in name_lower: return 'チョイス'
         if '楽天' in name_lower: return '楽天'
@@ -328,29 +331,35 @@ else:
 
         separator = '\t' if file_name.lower().endswith(('.tsv', '.txt')) else ','
         
+        # エンコーディングの試行順序リストを作成
         if '楽天' in file_name.lower() or 'さとふる' in file_name.lower():
-            encodings_to_try = ['shift_jis', 'utf-8']
-        elif any(n.lower() in file_name.lower() for n in ["N2", "チョイス", "プレミアム", "amazon"]):
-            encodings_to_try = ['utf-8', 'shift_jis']
+            encodings_to_try = ['cp932', 'shift_jis', 'utf-8']
+        elif any(n.lower() in file_name.lower() for n in ["N2", "チョイス", "プレミアム", "amazon", "あとギフ"]):
+            encodings_to_try = ['utf-8-sig', 'utf-8', 'cp932', 'shift_jis']
         else:
-            encodings_to_try = ['shift_jis', 'utf-8']
+            encodings_to_try = ['cp932', 'shift_jis', 'utf-8-sig', 'utf-8']
 
         for encoding in encodings_to_try:
             try:
-                corrected_encoding = 'utf-8-sig' if encoding == 'utf-8' else encoding
+                # BytesIOは読み込むとカーソルが進むため、ループ毎に新しいBytesIOを作成するかseek(0)が必要
+                # ここでは念のため毎回データを渡す
+                
                 df = pd.read_csv(
                     BytesIO(bytes_data), 
                     header=header_setting,
-                    encoding=corrected_encoding, 
+                    encoding=encoding, 
                     dtype=str, 
                     sep=separator, 
-                    # engine='python',  <-- ★削除（高速化のためCエンジンを使用）
                     on_bad_lines='warn', 
-                    encoding_errors='ignore'
+                    # これにより、文字コードが違う場合に例外が発生し、次のencodingを試しに行きます
+                    encoding_errors='strict'
                 )
                 return df.fillna('')
+            except UnicodeDecodeError:
+                # エンコーディング不一致の場合は次を試す
+                continue
             except Exception:
-                bytes_data = uploaded_file.getvalue()
+                # その他のエラーでも次を試す（念のため）
                 continue
                 
         st.error(f"'{file_name}' をサポートされているエンコーディングで読み込めませんでした。ファイルが破損している可能性があります。")
