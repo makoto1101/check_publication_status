@@ -11,6 +11,7 @@ def get_sheet_id(service, spreadsheet_id, sheet_name):
                 return sheet['properties']['sheetId']
         return None
     except Exception as e:
+        # 取得時のエラーは致命的でない場合もあるのでコンソールへ
         print(f"Error getting sheet ID: {e}")
         return None
 
@@ -25,7 +26,8 @@ def create_monthly_log_sheet(service, spreadsheet_id, sheet_name):
                 "properties": {
                     "title": sheet_name,
                     "gridProperties": {
-                        "rowCount": 1000,
+                        # ★変更: 固定行(1行)以外に最低1行スクロール用が必要なため、2にする
+                        "rowCount": 2, 
                         "columnCount": 7, # A-G列
                         "frozenRowCount": 1 # 1行目を固定
                     }
@@ -77,7 +79,6 @@ def create_monthly_log_sheet(service, spreadsheet_id, sheet_name):
         })
 
         # B. 列幅の設定 (指定されたサイズ)
-        # 列定義: (インデックス, サイズ)
         column_widths = [
             (0, 200), # A: 実行日時
             (1, 300), # B: ユーザー名
@@ -140,7 +141,8 @@ def create_monthly_log_sheet(service, spreadsheet_id, sheet_name):
         return new_sheet_id
 
     except Exception as e:
-        print(f"ログシート作成エラー: {e}")
+        # エラーを表示
+        st.error(f"ログシート作成中にエラーが発生しました: {e}")
         return None
 
 def write_log(service, log_spreadsheet_id, user_name, imported_files, base_portal, base_date, displayed_portals, error_msg=""):
@@ -169,10 +171,11 @@ def write_log(service, log_spreadsheet_id, user_name, imported_files, base_porta
         # シートがない場合は作成 (書式設定含む)
         if sheet_id is None:
             sheet_id = create_monthly_log_sheet(service, log_spreadsheet_id, target_sheet_name)
-            if sheet_id is None: return # 作成失敗時は終了
+            if sheet_id is None:
+                st.error("ログシートの作成に失敗したため、ログ記録を中断します。")
+                return 
 
         # 3. 行の挿入 (2行目に挿入)
-        # inheritFromBefore=False にして、ヘッダーの背景色などを引き継がないようにする
         requests = [
             {
                 "insertDimension": {
@@ -182,7 +185,7 @@ def write_log(service, log_spreadsheet_id, user_name, imported_files, base_porta
                         "startIndex": 1, # 0始まりのインデックス。1は「2行目」
                         "endIndex": 2
                     },
-                    "inheritFromBefore": False
+                    "inheritFromBefore": False # 上の行(ヘッダー)の書式を引き継がない
                 }
             }
         ]
@@ -203,7 +206,6 @@ def write_log(service, log_spreadsheet_id, user_name, imported_files, base_porta
         ).execute()
 
         # 5. データ行の書式設定 (中央揃えの適用)
-        # 対象: A列(0), B列(1), D列(3), E列(4)
         format_requests = []
         
         # A列～B列を中央揃え
@@ -252,6 +254,6 @@ def write_log(service, log_spreadsheet_id, user_name, imported_files, base_porta
         ).execute()
 
     except HttpError as err:
-        print(f"ログ記録APIエラー: {err}")
+        st.error(f"ログ記録中にAPIエラーが発生しました: {err}")
     except Exception as e:
-        print(f"ログ記録予期せぬエラー: {e}")
+        st.error(f"ログ記録中に予期せぬエラーが発生しました: {e}")

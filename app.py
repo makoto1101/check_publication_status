@@ -116,6 +116,13 @@ else:
     GSHEET_KEY = "1Yb-0DLDb-IAKIxDkhaSZxDl-zd2iDHZ3aX3_4mSiQyI" # マスタ用
     LOG_GSHEET_KEY = "1nMHW7CFSHqaZKI2qoA1w7I4zh1aHzKPNWUCC517uidg" # ログ用
 
+    # DB用のスプレッドシート
+    # https://docs.google.com/spreadsheets/d/1Yb-0DLDb-IAKIxDkhaSZxDl-zd2iDHZ3aX3_4mSiQyI/
+
+    # ログ専用のスプレッドシート
+    # https://docs.google.com/spreadsheets/d/1nMHW7CFSHqaZKI2qoA1w7I4zh1aHzKPNWUCC517uidg/
+
+
     # --- Google スプレッドシート連携関数 ---
     @st.cache_resource(ttl=600) # 10分間 service クライアントをキャッシュ
     def init_sheets_service():
