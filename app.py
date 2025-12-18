@@ -17,6 +17,8 @@ from status import calculate_status
 from operation_manual import show_instructions
 # --- ステータス判定条件をインポート ---
 from status_manual import show_status_conditions
+# --- ログ機能をインポート ---
+from log import write_log
 
 # 基準日のデフォルト値とダウンロードファイル名用の日付を定義
 TODAY = datetime.now().date()
@@ -88,7 +90,7 @@ else:
             show_instructions()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. ステータス判定条件（リンク風ボタン）(★追加)
+    # 2. ステータス判定条件（リンク風ボタン）
     with col_status_link:
         st.markdown("<div style='margin-top: 15px;'>", unsafe_allow_html=True)
         if st.button("📋 ステータス判定条件", type="tertiary"):
@@ -123,7 +125,7 @@ else:
             
             # App 2 と同じ 'readonly' スコープを使用
             scopes = [
-                'https://www.googleapis.com/auth/spreadsheets.readonly'
+                'https://www.googleapis.com/auth/spreadsheets'
                 # 'drive' スコープはシートの読み取りだけなら不要
             ]
             
@@ -507,7 +509,7 @@ else:
         st.session_state.results_df = pd.DataFrame()
     # (認証関連のセッションステートはStreamlitが内部で管理するため不要)
 
-    # --- フィルター状態の初期化 (★ 追加: リセットされないようにsession_stateで管理) ---
+    # --- フィルター状態の初期化 (リセットされないようにsession_stateで管理) ---
     if 'f_search' not in st.session_state: st.session_state.f_search = ""
     if 'f_vendor' not in st.session_state: st.session_state.f_vendor = "すべて"
     if 'f_check' not in st.session_state: st.session_state.f_check = "すべて"
@@ -881,9 +883,20 @@ else:
             # 選択された日付を 'YYYYMMDD' 形式の文字列に変換
             select_date_str = selected_date.strftime('%Y%m%d')
             
-            # ★ 追加: セッションステートに基準日とベースポータルを保存
+            # セッションステートに基準日とベースポータルを保存
             st.session_state.current_select_date_str = select_date_str
             st.session_state.current_base_portal = selected_base_portal
+
+            # ログ用にインポートファイル名リストを作成
+            log_imported_files = []
+            for key, val in st.session_state.dataframes.items():
+                if key.endswith('_metadata'):
+                    # val is tuple (filename, size, type)
+                    log_imported_files.append(val[0])
+            
+            # ログ用変数初期化
+            log_displayed_portals = []
+            log_user_name = st.user.email if hasattr(st.user, "email") else "Unknown"
 
             with st.spinner("データを処理し、ステータスを計算中..."):
                 try:
@@ -966,7 +979,7 @@ else:
                     rakuten_management_id_map = {} # 商品管理番号（商品URL） -> 行データ
                     rakuten_sku_code_map = {} # SKU管理番号 -> 行データ
                     
-                    # ★ 【追加】楽天のグループマップ作成 (商品管理番号 -> 行リスト)
+                    # 楽天のグループマップ作成 (商品管理番号 -> 行リスト)
                     rakuten_group_map = {}
 
                     if '楽天' in full_data:
@@ -1088,7 +1101,7 @@ else:
                             # ★ 重要: SKU管理番号は厳密比較のため、.upper() しない (元のまま)
                             rakuten_sku_code_map = {str(row['SKU管理番号']).strip(): row.to_dict() for _, row in df_rakuten_h.iterrows()}
                         
-                        # ★ 【追加】グループマップの構築
+                        # グループマップの構築
                         if '商品管理番号（商品URL）' in df_rakuten_data.columns:
                             for _, row in df_rakuten_data.iterrows():
                                 mid = str(row['商品管理番号（商品URL）']).strip().upper()
@@ -1168,7 +1181,7 @@ else:
                                 rakuten_product_id_map=rakuten_product_id_map,
                                 rakuten_management_id_map=rakuten_management_id_map,
                                 rakuten_sku_code_map=rakuten_sku_code_map,
-                                # ★ 【追加】楽天のグループマップを渡す
+                                # 楽天のグループマップを渡す
                                 rakuten_group_map=rakuten_group_map
                             ) for portal in uploaded_portals
                         }
@@ -1226,17 +1239,46 @@ else:
                         display_columns = base_columns + base_portal_column_list + other_portal_columns + utility_columns
                         final_display_columns = [col for col in display_columns if col in df_results.columns]
                         st.session_state.results_df = df_results.reindex(columns=final_display_columns)
+                        
+                        # ログ用に表示できたポータル一覧を取得
+                        log_displayed_portals = uploaded_portals
+
+                        # ログ書き込み (成功時) 
+                        write_log(
+                            service=sheets_service,
+                            spreadsheet_id=GSHEET_KEY,
+                            user_name=log_user_name,
+                            imported_files=log_imported_files,
+                            base_portal=selected_base_portal,
+                            base_date=select_date_str,
+                            displayed_portals=log_displayed_portals,
+                            error_msg="" # エラーなし
+                        )
+
                     else:
                         st.session_state.results_df = pd.DataFrame()
                     
                 except Exception as e:
+                    error_msg = str(e)
                     st.error(f"処理中に予期せぬエラーが発生しました: {e}"); import traceback; st.code(traceback.format_exc())
                     st.session_state.results_df = pd.DataFrame()
 
-            # ★ 追加: 処理完了のトーストメッセージ
+                    # ログ書き込み (エラー時) 
+                    write_log(
+                        service=sheets_service,
+                        spreadsheet_id=GSHEET_KEY,
+                        user_name=log_user_name,
+                        imported_files=log_imported_files,
+                        base_portal=selected_base_portal,
+                        base_date=select_date_str,
+                        displayed_portals=[], # エラー時は表示ポータルなしとみなす
+                        error_msg=error_msg
+                    )
+
+            # 処理完了のトーストメッセージ
             st.toast("掲載状況の表示を更新しました。", icon="📊")
             
-            # ★ 処理完了後にフラグを下ろして再実行（ボタンを有効化するため）
+            # 処理完了後にフラグを下ろして再実行（ボタンを有効化するため）
             st.session_state.is_running = False
             st.rerun()
 
