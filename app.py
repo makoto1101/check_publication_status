@@ -113,7 +113,8 @@ else:
     # UI（st.sidebar）より先に、必要な関数や変数を定義する
 
     # --- Google スプレッドシート設定 ---
-    GSHEET_KEY = "1Yb-0DLDb-IAKIxDkhaSZxDl-zd2iDHZ3aX3_4mSiQyI"
+    GSHEET_KEY = "1Yb-0DLDb-IAKIxDkhaSZxDl-zd2iDHZ3aX3_4mSiQyI" # マスタ用
+    LOG_GSHEET_KEY = "1nMHW7CFSHqaZKI2qoA1w7I4zh1aHzKPNWUCC517uidg" # ログ用
 
     # --- Google スプレッドシート連携関数 ---
     @st.cache_resource(ttl=600) # 10分間 service クライアントをキャッシュ
@@ -123,10 +124,9 @@ else:
             # st.secretsから認証情報を読み込む
             google_credentials_info = json.loads(st.secrets["gcp_service_account"]["credentials_json"])
             
-            # App 2 と同じ 'readonly' スコープを使用
+            # ログ書き込みのため、readonly を外してフルアクセス権限にする
             scopes = [
                 'https://www.googleapis.com/auth/spreadsheets'
-                # 'drive' スコープはシートの読み取りだけなら不要
             ]
             
             credentials = service_account.Credentials.from_service_account_info(
@@ -647,12 +647,12 @@ else:
                 # fileがNoneの可能性は事前チェックで排除されている
                 sheet_name = get_sheet_name_from_filename(file.name)
                 
-                # ★ 変更: file_id の代わりに、名前、サイズ、タイプでファイルの一意性を判断
+                # file_id の代わりに、名前、サイズ、タイプでファイルの一意性を判断
                 file_key = f"{sheet_name}_metadata"
                 current_metadata = (file.name, file.size, file.type)
 
                 # 既に読み込まれていて、ファイルメタデータが変わっていない場合は再読み込みしない
-                # ★ 変更: file_id の比較をメタデータの比較に変更
+                # file_id の比較をメタデータの比較に変更
                 if sheet_name not in st.session_state.dataframes or st.session_state.dataframes.get(file_key) != current_metadata:
                     df = robust_read_file(file)
                     
@@ -704,13 +704,14 @@ else:
                             for col in fill_targets:
                                 # マッピング実行 (transformより圧倒的に速い)
                                 df[col] = df['商品管理番号（商品URL）'].map(grouped_first[col])
+                        
                         # -----------------------------------
 
                         if sheet_name not in SKIP_FILTERING_SHEETS:
                             df = filter_dataframe(df, sheet_name, item_codes_list, vendor_codes_list)
                         
                         st.session_state.dataframes[sheet_name] = df
-                        st.session_state.dataframes[file_key] = current_metadata # ★ 変更: メタデータを保存
+                        st.session_state.dataframes[file_key] = current_metadata # メタデータを保存
 
                         new_file_processed = True # ★ 新規ファイル処理フラグを立てる
 
@@ -758,7 +759,7 @@ else:
 
         # --- インポートされたファイルのプレビュー Expander ---
         # session_state.dataframes にファイルID以外のキーが存在するか確認
-        # ★ 変更: _id -> _metadata
+        # _id -> _metadata
         processed_dataframes_exist = any(not k.endswith('_metadata') for k in st.session_state.dataframes)
 
         # 処理済みのデータフレームが存在する場合のみ Expander を表示
@@ -785,7 +786,7 @@ else:
         st.markdown('<p style="font-size: 14px; margin-top: 10px; margin-bottom: 5px;">選択されたポータルと基準日を元に掲載状況を表示します。</p>', unsafe_allow_html=True)
 
         # インポートされたポータル名のリストを取得
-        # ★ 変更: _id -> _metadata
+        # _id -> _metadata
         uploaded_portal_names = [p for p in PORTAL_ORDER if p in st.session_state.dataframes and not p.endswith('_metadata')]
 
         # ファイルがアップロードされているかどうかのフラグ
@@ -847,7 +848,7 @@ else:
 
 
     # --- メインページUIセクション ---
-    # ★ 条件式を変更: ボタンの戻り値ではなく、セッションステートのフラグで判定
+    # ボタンの戻り値ではなく、セッションステートのフラグで判定
     if st.session_state.is_running:
         # スプレッドシートクライアントが正常かチェック
         if sheets_service is None:
@@ -856,7 +857,7 @@ else:
             st.stop()
             
         # 処理実行前のバリデーションチェック
-        # ★ 変更: _id -> _metadata
+        # _id -> _metadata
         loaded_df_names = {k for k in st.session_state.dataframes if not k.endswith('_metadata')}
         
         # ベースポータルが選択されているか
@@ -915,7 +916,7 @@ else:
                         st.stop()
                     # ---------------------------------
 
-                    # ★ 変更: _id -> _metadata
+                    # _id -> _metadata
                     full_data = {k: v for k, v in st.session_state.dataframes.items() if not k.endswith('_metadata')}
                     
                     master_items = {}
@@ -943,16 +944,16 @@ else:
                             if isinstance(code_col, int):
                                 # (チョイス系: インデックス番号で参照)
                                 # (lookup_maps側とクレンジング処理を合わせる)
-                                # ★ 変更: すべて .str.upper() に統一
+                                # すべて .str.upper() に統一
                                 df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                             
                             elif isinstance(code_col, str):
                                 # (その他: ヘッダー名で参照)
                                 if base_portal_name == 'さとふる':
-                                    # ★ 変更: すべて .str.upper() に統一
+                                    # すべて .str.upper() に統一
                                     df_master_source['key'] = df_master_source[code_col].astype(str).str.extract(r'\[(.*?)\]', expand=False).fillna('').str.upper()
                                 else:
-                                    # ★ 変更: すべて .str.upper() に統一
+                                    # すべて .str.upper() に統一
                                     df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                             # 重複を除去
                             unique_items = df_master_source[df_master_source['key'] != ''].drop_duplicates(subset=['key'], keep='first')
@@ -1092,7 +1093,7 @@ else:
                         # A列(商品管理番号（商品URL）) -> 行データ
                         if '商品管理番号（商品URL）' in df_rakuten_data.columns:
                             df_rakuten_a = df_rakuten_data.dropna(subset=['商品管理番号（商品URL）']).drop_duplicates(subset=['商品管理番号（商品URL）'], keep='first')
-                            # ★ 変更: .upper() に統一
+                            # .upper() に統一
                             rakuten_management_id_map = {str(row['商品管理番号（商品URL）']).strip().upper(): row.to_dict() for _, row in df_rakuten_a.iterrows()}
 
                         # H列(SKU管理番号) -> 行データ
@@ -1127,7 +1128,7 @@ else:
                                 
                             df_cleaned = df_data_only.dropna(subset=[key_col]).copy()
                             # BOM等の除去、.0除去、空白除去
-                            # ★ 変更: すべて .str.upper() に統一
+                            # .str.upper() に統一
                             df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                             df_cleaned = df_cleaned[df_cleaned['key_col_str'] != '']
                             
@@ -1149,7 +1150,7 @@ else:
                                     # 'お礼品名' 列(key_col)からコードを抽出
                                     match = re.search(r'\[(.*?)\]', str(row.get(key_col, ''))) 
                                     if match:
-                                        # ★ 変更: すべて .upper() に統一
+                                        # すべて .upper() に統一
                                         key = match.group(1).strip().upper()
                                         if key and key not in temp_map:
                                             # キーがヘッダー名('お礼品ID', 'お礼品名'...)の辞書を作成
@@ -1157,7 +1158,7 @@ else:
                                 lookup_maps[name] = temp_map
                             else:
                                 # BOM等の除去、.0除去、空白除去
-                                # ★ 変更: すべて .str.upper() に統一
+                                # すべて .str.upper() に統一
                                 df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                                 df_cleaned = df_cleaned[df_cleaned['key_col_str'] != '']
                                 
@@ -1246,7 +1247,7 @@ else:
                         # ログ書き込み (成功時) 
                         write_log(
                             service=sheets_service,
-                            spreadsheet_id=GSHEET_KEY,
+                            log_spreadsheet_id=LOG_GSHEET_KEY, # ログ専用キーを渡す
                             user_name=log_user_name,
                             imported_files=log_imported_files,
                             base_portal=selected_base_portal,
@@ -1266,7 +1267,7 @@ else:
                     # ログ書き込み (エラー時) 
                     write_log(
                         service=sheets_service,
-                        spreadsheet_id=GSHEET_KEY,
+                        log_spreadsheet_id=LOG_GSHEET_KEY, # ログ専用キーを渡す
                         user_name=log_user_name,
                         imported_files=log_imported_files,
                         base_portal=selected_base_portal,
@@ -1570,18 +1571,18 @@ else:
                 with excel_col:
                     excel_data = to_excel(df_to_display)
                     
-                    # ★ 変更: session_stateから値を取得
+                    # session_stateから値を取得
                     # L708で保存した値を使用。存在しない場合のデフォルト値も設定
                     base_portal_for_name = st.session_state.get('current_base_portal', 'N/A')
                     date_str_for_name = st.session_state.get('current_select_date_str', 'YYYYMMDD')
                     
-                    # ★ 変更: ファイル名を新しい形式に
+                    # ファイル名を新しい形式に
                     file_name_excel = f"掲載状況データ_{TODAY_STR}（target_{base_portal_for_name}_{date_str_for_name}）.xlsx"
                     
                     st.download_button(
                         label="Excel保存",
                         data=excel_data,
-                        file_name=file_name_excel, # ★ 変更
+                        file_name=file_name_excel,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key="excel_download",
                         width='stretch' 
@@ -1591,17 +1592,17 @@ else:
                 with csv_col:
                     csv_data = to_csv(df_to_display)
                     
-                    # ★ 変更: session_stateから値を取得 (上記と同じ変数を使用)
+                    # session_stateから値を取得 (上記と同じ変数を使用)
                     base_portal_for_name = st.session_state.get('current_base_portal', 'N/A')
                     date_str_for_name = st.session_state.get('current_select_date_str', 'YYYYMMDD')
                     
-                    # ★ 変更: ファイル名を新しい形式に
+                    # ファイル名を新しい形式に
                     file_name_csv = f"掲載状況データ_{TODAY_STR}（target_{base_portal_for_name}_{date_str_for_name}）.csv"
                     
                     st.download_button(
                         label="CSV保存",
                         data=csv_data,
-                        file_name=file_name_csv, # ★ 変更
+                        file_name=file_name_csv,
                         mime="text/csv",
                         key="csv_download",
                         width='stretch'
