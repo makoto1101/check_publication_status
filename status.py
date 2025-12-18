@@ -400,30 +400,41 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         
         stock_status = "在庫0" if stock_raw == '0' else stock_raw
         
-        start_date = format_date(get_val('ANA', code, '販売開始日'))
-        end_date = format_date(get_val('ANA', code, '販売終了日'))
+        # 掲載期間
+        pub_start = format_date(get_val('ANA', code, '掲載開始日'))
+        pub_end = format_date(get_val('ANA', code, '掲載終了日'))
+        
+        # 販売期間
+        sale_start = format_date(get_val('ANA', code, '販売開始日'))
+        sale_end = format_date(get_val('ANA', code, '販売終了日'))
         
         # 【1】未登録
         if status_flag == '': return '未登録'
+
         # 【2】非表示
         # 1(非公開) または 9(終息) の場合
         if status_flag == '1' or status_flag == '9': return '非表示'
+
         # 【3】在庫0
         if stock_status == '在庫0': return '在庫0'
         
-        # 【4】販売期間設定なし（開始・終了ともに空欄）：公開中
-        if not start_date and not end_date:
-            return '公開中'
-
-        # 【5】販売開始日が未来：未受付
-        if start_date and start_date > select_date_str:
+        # 【4】掲載開始日が未来：未受付
+        if pub_start and pub_start > select_date_str:
             return '未受付'
 
-        # 【6】販売終了日が過去：受付終了
-        if end_date and end_date < select_date_str:
+        # 【5】掲載終了日が過去：受付終了
+        if pub_end and pub_end < select_date_str:
             return '受付終了'
 
-        # 【7】上記以外：公開中
+        # 【6】販売開始日が未来：未受付
+        if sale_start and sale_start > select_date_str:
+            return '未受付'
+
+        # 【7】販売終了日が過去：受付終了
+        if sale_end and sale_end < select_date_str:
+            return '受付終了'
+
+        # 【8】上記以外：公開中
         return '公開中'
 
     if portal == 'ふるなび':
@@ -731,19 +742,55 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
     
     # --- あとギフのステータス判定ロジック ---
     if portal == 'あとギフ':
-        # 指定された列名を使用
-        target_col = '表示有無 (表示させる場合は半角数字の1、非表示にする場合は半角数字の0)'
-        public_setting = get_val('あとギフ', code, target_col)
-        
-        # 数値・文字列・小数のゆらぎを考慮して判定
-        s_val = str(public_setting).strip()
-        
-        if s_val == '0' or s_val == '0.0':
-            return '非表示'
-        elif s_val == '1' or s_val == '1.0':
-            return '公開中'
+        if not row: return '未登録'
+
+        # データ（列）で判断: 「販売フラグ」列があればふるなび形式
+        is_furunavi_type = '販売フラグ' in row
+
+        # --- パターンB: ふるなび形式 ---
+        if is_furunavi_type:
+            sales_flag = get_val('あとギフ', code, '販売フラグ')
+            public_flag = get_val('あとギフ', code, '公開フラグ')
+            stock_count_raw = get_val('あとギフ', code, '在庫数')
             
-        # それ以外の場合は公開中として扱う（あるいはデフォルト値）
-        return '公開中'
+            start_date = format_date(get_val('あとギフ', code, '受付開始日時'))
+            end_date = format_date(get_val('あとギフ', code, '受付終了日時'))
+
+            # 【2】 販売フラグ または 公開フラグ が "off" ⇒ 非表示
+            if sales_flag == 'off' or public_flag == 'off':
+                return '非表示'
+
+            # 【3】 在庫数が 0 ⇒ 在庫0
+            if stock_count_raw == '0':
+                return '在庫0'
+
+            # 【4】 受付期間設定なし ⇒ 公開中
+            if not start_date and not end_date:
+                return '公開中'
+
+            # 【5】 受付開始日時が未来 ⇒ 未受付
+            if start_date and start_date > select_date_str:
+                return '未受付'
+
+            # 【6】 受付終了日時が過去 ⇒ 受付終了
+            if end_date and end_date < select_date_str:
+                return '受付終了'
+
+            # 【7】 上記以外 ⇒ 公開中
+            return '公開中'
+
+        # --- パターンA: チョイス形式 ---
+        else:
+            target_col = '表示有無 (表示させる場合は半角数字の1、非表示にする場合は半角数字の0)'
+            public_setting = get_val('あとギフ', code, target_col)
+            
+            s_val = str(public_setting).strip()
+            
+            if s_val == '0' or s_val == '0.0':
+                return '非表示'
+            elif s_val == '1' or s_val == '1.0':
+                return '公開中'
+                
+            return '公開中'
 
     return '未実装'

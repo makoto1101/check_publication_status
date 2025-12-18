@@ -26,7 +26,7 @@ def create_monthly_log_sheet(service, spreadsheet_id, sheet_name):
                 "properties": {
                     "title": sheet_name,
                     "gridProperties": {
-                        # ★変更: 固定行(1行)以外に最低1行スクロール用が必要なため、2にする
+                        # 固定行(1行)以外に最低1行スクロール用が必要なため、2にする
                         "rowCount": 2, 
                         "columnCount": 7, # A-G列
                         "frozenRowCount": 1 # 1行目を固定
