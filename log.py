@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from googleapiclient.errors import HttpError
 
 def get_sheet_id(service, spreadsheet_id, sheet_name):
@@ -65,14 +65,18 @@ def write_log(service, spreadsheet_id, user_name, imported_files, base_portal, b
     """
     target_sheet_name = "logs"
     
-    # 1. データの整形
-    now_str = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+    # 1. データの整形 (日本時間 JST で取得)
+    # タイムゾーンの定義 (UTC+9時間)
+    JST = timezone(timedelta(hours=9), 'JST')
+    now_jst = datetime.now(JST)
+    now_str = now_jst.strftime("%Y/%m/%d %H:%M:%S")
+    
     files_str = ", ".join(imported_files) if imported_files else ""
     portals_str = ", ".join(displayed_portals) if displayed_portals else ""
     
     # 記録するデータの配列 (A列～G列)
     row_data = [
-        now_str,            # A: 実行日時
+        now_str,            # A: 実行日時 (JST)
         user_name,          # B: ユーザー名
         files_str,          # C: インポートファイル
         base_portal,        # D: 基準ポータル
@@ -85,10 +89,8 @@ def write_log(service, spreadsheet_id, user_name, imported_files, base_portal, b
         # 2. シートIDの取得
         sheet_id = get_sheet_id(service, spreadsheet_id, target_sheet_name)
         
-        # ★ シートが見つからない場合、自動作成を試みる
+        # シートが見つからない場合、自動作成を試みる
         if sheet_id is None:
-            # 開発者への通知（必要であれば）
-            # st.toast("ログシートが見つからないため、新規作成します...", icon="ℹ️")
             sheet_id = create_logs_sheet(service, spreadsheet_id, target_sheet_name)
             
             if sheet_id is None:
