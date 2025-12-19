@@ -278,7 +278,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         if order_button_val != "":
             try:
                 if float(order_button_val) == 0:
-                    return "未受付"
+                    return "注文不可"
             except ValueError:
                 pass
 

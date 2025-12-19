@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
+import gc
 from io import BytesIO
 from datetime import datetime
 import os
@@ -18,7 +19,7 @@ from operation_manual import show_instructions
 # --- ステータス判定条件をインポート ---
 from status_manual import show_status_conditions
 # --- ログ機能をインポート ---
-from log import write_log
+# from log import write_log  # ★ログ出力停止のためコメントアウト
 
 # 基準日のデフォルト値とダウンロードファイル名用の日付を定義
 TODAY = datetime.now().date()
@@ -1192,8 +1193,8 @@ else:
                         # --- チェックロジック ---
                         unique_statuses = set(status_values)
                         
-                        # 「非表示」「在庫0」「受付終了」「倉庫」の4種を「グレーゾーン」と定義
-                        allowed_gray_statuses = {'非表示', '在庫0', '受付終了', '倉庫'}
+                        # 「非表示」「在庫0」「受付終了」「倉庫」「注文不可」を「グレーゾーン」と定義
+                        allowed_gray_statuses = {'非表示', '在庫0', '受付終了', '倉庫', '注文不可'}
                         
                         # グレーゾーン以外のステータス（公開中、未登録など）を抽出
                         main_statuses = unique_statuses - allowed_gray_statuses
@@ -1245,16 +1246,17 @@ else:
                         log_displayed_portals = uploaded_portals
 
                         # ログ書き込み (成功時) 
-                        write_log(
-                            service=sheets_service,
-                            log_spreadsheet_id=LOG_GSHEET_KEY, # ログ専用キーを渡す
-                            user_name=log_user_name,
-                            imported_files=log_imported_files,
-                            base_portal=selected_base_portal,
-                            base_date=select_date_str,
-                            displayed_portals=log_displayed_portals,
-                            error_msg="" # エラーなし
-                        )
+                        # ★以下コメントアウトして無効化
+                        # write_log(
+                        #     service=sheets_service,
+                        #     log_spreadsheet_id=LOG_GSHEET_KEY,
+                        #     user_name=log_user_name,
+                        #     imported_files=log_imported_files,
+                        #     base_portal=selected_base_portal,
+                        #     base_date=select_date_str,
+                        #     displayed_portals=log_displayed_portals,
+                        #     error_msg=""
+                        # )
 
                     else:
                         st.session_state.results_df = pd.DataFrame()
@@ -1265,16 +1267,33 @@ else:
                     st.session_state.results_df = pd.DataFrame()
 
                     # ログ書き込み (エラー時) 
-                    write_log(
-                        service=sheets_service,
-                        log_spreadsheet_id=LOG_GSHEET_KEY, # ログ専用キーを渡す
-                        user_name=log_user_name,
-                        imported_files=log_imported_files,
-                        base_portal=selected_base_portal,
-                        base_date=select_date_str,
-                        displayed_portals=[], # エラー時は表示ポータルなしとみなす
-                        error_msg=error_msg
-                    )
+                    # ★以下コメントアウトして無効化
+                    # write_log(
+                    #     service=sheets_service,
+                    #     log_spreadsheet_id=LOG_GSHEET_KEY,
+                    #     user_name=log_user_name,
+                    #     imported_files=log_imported_files,
+                    #     base_portal=selected_base_portal,
+                    #     base_date=select_date_str,
+                    #     displayed_portals=[],
+                    #     error_msg=error_msg
+                    # )
+
+            # --- メモリ解放処理 ---
+            # 1. もう使わない大きな変数を明示的に削除 (メモリ上の参照を切る)
+            # ※ locals() にある場合のみ削除する安全策
+            vars_to_delete = [
+                'full_data', 'master_items', 'lookup_maps', 'parent_lookup_maps',
+                'rakuten_product_id_map', 'rakuten_management_id_map', 'rakuten_group_map',
+                'df_base', 'df_business', 'teiki_bin_codes', 'df_results'
+            ]
+            
+            for var_name in vars_to_delete:
+                if var_name in locals():
+                    del locals()[var_name]
+            
+            # 2. 強制的にガベージコレクションを実行してメモリを空ける
+            gc.collect()
 
             # 処理完了のトーストメッセージ
             st.toast("掲載状況の表示を更新しました。", icon="📊")
@@ -1442,6 +1461,7 @@ else:
             '非表示': ('#6c757d', '#FFFFFF'),
             '在庫0': ('#6c757d', '#FFFFFF'),
             '倉庫': ('#6c757d', '#FFFFFF'),
+            '注文不可': ('#6c757d', '#FFFFFF'),
             '未受付': ('#ffc107', '#000000'), # 未受付は黒文字
             '要確認': ('#fa6c78', '#000000')  # 要確認は黒文字
         }
@@ -1611,7 +1631,7 @@ else:
         # --- データフレームのスタイリングと表示 ---
         color_map = {'公開中': 'background-color: #22a579; color: white;', '未登録': 'background-color: #111111; color: white;', '受付終了': 'background-color: #6c757d; color: white;', 
                      '非表示': 'background-color: #6c757d; color: white;', '在庫0': 'background-color: #6c757d; color: white;', '倉庫': 'background-color: #6c757d; color: white;',
-                     '未受付': 'background-color: #ffc107; color: black;'}
+                     '注文不可': 'background-color: #6c757d; color: white;', '未受付': 'background-color: #ffc107; color: black;'}
         
         def style_dataframe(df):
             style = pd.DataFrame('', index=df.index, columns=df.columns)

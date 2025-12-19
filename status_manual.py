@@ -26,6 +26,7 @@ CUSTOM_CSS = """
 .st-hidden    { background-color: #6c757d !important; color: #FFFFFF !important; } /* 非表示 */
 .st-stock0    { background-color: #6c757d !important; color: #FFFFFF !important; } /* 在庫0 */
 .st-warehouse { background-color: #6c757d !important; color: #FFFFFF !important; } /* 倉庫 */
+.st-order-ng  { background-color: #6c757d !important; color: #FFFFFF !important; } /* 注文不可 */
 .st-notyet    { background-color: #ffc107 !important; color: #000000 !important; } /* 未受付 */
 .st-check     { background-color: #fa6c78 !important; color: #000000 !important; } /* 要確認 */
 
@@ -69,6 +70,7 @@ STATUS_CLASS_MAP = {
     '非表示': 'st-hidden',
     '在庫0':   'st-stock0',
     '倉庫':   'st-warehouse',
+    '注文不可': 'st-order-ng',
     '未受付': 'st-notyet',
     '要確認': 'st-check'
 }
@@ -144,7 +146,7 @@ def show_status_conditions():
             rows += create_status_row("倉庫", "【2】 倉庫指定あり", "「倉庫指定」または 「SKU倉庫指定」が <code>1</code> の場合")
             rows += create_status_row("在庫0", "【3】 在庫数が 0", "「在庫数」が <code>0</code> の場合")
             rows += create_status_row("非表示", "【4】 サーチ表示が 0", "「サーチ表示」が <code>0</code> の場合")
-            rows += create_status_row("未受付", "【5】 注文ボタンが 0", "「注文ボタン」が <code>0</code> の場合")
+            rows += create_status_row("注文不可", "【5】 注文ボタンが 0", "「注文ボタン」が <code>0</code> の場合")
             rows += create_status_row("公開中", "【6】 販売期間設定なし", "「販売期間指定（開始日時）」と「販売期間指定（終了日時）」が共に設定されていない場合")
             rows += create_status_row("未受付", "【7】 販売開始日時が未来", "「販売期間指定（開始日時）」が、<strong>基準日より後の日付</strong>の場合")
             rows += create_status_row("受付終了", "【8】 販売終了日時が過去", "「販売期間指定（終了日時）」が、<strong>基準日より前の日付</strong>の場合")
