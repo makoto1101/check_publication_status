@@ -387,7 +387,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             return '未受付'
 
         # 【6】販売期間(終了)が過去：受付終了
-        if sales_end < select_date_str:
+        if sales_end and sales_end < select_date_str:
             return '受付終了'
 
         # 【7】上記以外：公開中
@@ -637,7 +637,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
             return '未受付'
 
         # 【6】公開終了日が過去：受付終了
-        if end_date < select_date_str:
+        if end_date and end_date < select_date_str:
             return '受付終了'
 
         # 【7】上記以外：公開中
