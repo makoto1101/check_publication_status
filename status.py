@@ -120,7 +120,6 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         # 外部から渡された辞書を取得
         rakuten_product_id_map = kwargs.get('rakuten_product_id_map', {})
         rakuten_management_id_map = kwargs.get('rakuten_management_id_map', {})
-        rakuten_sku_code_map = kwargs.get('rakuten_sku_code_map', {})
         # グループマップを取得
         rakuten_group_map = kwargs.get('rakuten_group_map', {})
 
@@ -178,33 +177,33 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
         # ■ AA列 (倉庫指定)
         warehouse_status = ""
         
-        # product_id (大文字) で親行を検索
-        product_row_for_warehouse = rakuten_product_id_map.get(product_id)
-
-        # SKU管理番号辞書で product_id (大文字) を検索
-        sku_row_found_by_product_id = rakuten_sku_code_map.get(product_id)
-        if not sku_row_found_by_product_id:
-             # 見つからなければ product_id (小文字) で再検索
-            sku_row_found_by_product_id = rakuten_sku_code_map.get(product_id.lower())
-
-        # SKU管理番号辞書で sku_parent_code (生) を検索
-        sku_row_found_by_sku_parent = rakuten_sku_code_map.get(sku_parent_code)
+        # 1. まず自分自身（商品行）の倉庫指定を見る
+        if product_row and product_row.get("倉庫指定", "") == "1":
+            warehouse_status = "1"
         
-        # product_id または sku_parent_code が SKU管理番号辞書に存在するか
-        relevant_sku_row = sku_row_found_by_product_id or sku_row_found_by_sku_parent
-        
-        if relevant_sku_row:
-            # SKU行が見つかった場合
-            # 1. SKU行自体の「倉庫指定」が "1" か確認
-            if relevant_sku_row.get("倉庫指定", "") == "1":
-                warehouse_status = "1"
-            # 2. SKU行が "1" でない場合、親行の「倉庫指定」が "1" か確認
-            elif product_row_for_warehouse and product_row_for_warehouse.get("倉庫指定", "") == "1":
-                warehouse_status = "1"
+        # 2. 次に、グループ（在庫行）側の倉庫指定を見る
         else:
-            # SKU行が見つからなくても、その行自体の「倉庫指定」を確認する
-            if product_row_for_warehouse and product_row_for_warehouse.get("倉庫指定", "") == "1":
-                warehouse_status = "1"
+            if sku_parent_code != "なし":
+                # 商品管理番号（URL）をキーにしてグループを取得
+                target_group_key = sku_parent_code.upper()
+                group_rows = rakuten_group_map.get(target_group_key, [])
+                group_len = len(group_rows)
+
+                if group_len == 2:
+                    # グループが2件（ペア）の場合、もう一方の行を確認する
+                    for gr in group_rows:
+                        # 自分自身（現在のproduct_id）でない行を探す
+                        g_code = str(gr.get('商品番号', '')).strip().upper()
+                        if g_code != product_id:
+                            # 在庫行の「倉庫指定」または「SKU倉庫指定」が1なら倉庫扱いとする
+                            if gr.get("倉庫指定", "") == "1" or gr.get("SKU倉庫指定", "") == "1":
+                                warehouse_status = "1"
+                            break
+                
+                elif group_len >= 3:
+                    # グループが3件以上の場合、判定をスキップする（イレギュラーケース）
+                    # 必要に応じて全行チェックなどに拡張可能
+                    pass
 
         # ■ AB列 (サーチ表示)
         search_display = ""
@@ -215,7 +214,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
              management_row = rakuten_management_id_map.get(sku_parent_code.upper())
 
         if not sku_parent_code or sku_parent_code == "なし":
-            # product_row は L.151 で取得済み (product_id大文字)
+            # product_row は上記で取得済み (product_id大文字)
             if product_row: 
                 search_display = product_row.get("サーチ表示", "") # E列
         else:
@@ -225,7 +224,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
 
         # ■ AF/AG列 -> AC/AD列 (販売期間)
         start_date_raw = ""
-        # product_row は L.151 で取得済み (product_id大文字)
+        # product_row は上記で取得済み (product_id大文字)
         if product_row and product_row.get("販売期間指定（開始日時）", "") != "": # F列
             start_date_raw = product_row.get("販売期間指定（開始日時）")
         else:
@@ -233,7 +232,7 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
                 start_date_raw = management_row.get("販売期間指定（開始日時）", "")
 
         end_date_raw = ""
-        # product_row は L.151 で取得済み (product_id大文字)
+        # product_row は上記で取得済み (product_id大文字)
         if product_row and product_row.get("販売期間指定（終了日時）", "") != "": # G列
             end_date_raw = product_row.get("販売期間指定（終了日時）")
         else:

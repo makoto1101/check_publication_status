@@ -615,8 +615,8 @@ else:
                     
                     # ポータル名特定不可の場合
                     if sheet_name is None:
-                         files_to_reject_unknown.append(file.name)
-                         continue # 以降の処理をスキップ
+                          files_to_reject_unknown.append(file.name)
+                          continue # 以降の処理をスキップ
 
                     if sheet_name in portal_to_file_map:
                         # 重複検出: このファイルは拒否リストへ
@@ -985,7 +985,6 @@ else:
                     # 楽天データから各種対応辞書を作成 (ヘッダー名で参照)
                     rakuten_product_id_map = {} # 商品番号 -> 行データ
                     rakuten_management_id_map = {} # 商品管理番号（商品URL） -> 行データ
-                    rakuten_sku_code_map = {} # SKU管理番号 -> 行データ
                     
                     # 楽天のグループマップ作成 (商品管理番号 -> 行リスト)
                     rakuten_group_map = {}
@@ -1103,12 +1102,6 @@ else:
                             # .upper() に統一
                             rakuten_management_id_map = {str(row['商品管理番号（商品URL）']).strip().upper(): row.to_dict() for _, row in df_rakuten_a.iterrows()}
 
-                        # H列(SKU管理番号) -> 行データ
-                        if 'SKU管理番号' in df_rakuten_data.columns:
-                            df_rakuten_h = df_rakuten_data.dropna(subset=['SKU管理番号']).drop_duplicates(subset=['SKU管理番号'], keep='first')
-                            # ★ 重要: SKU管理番号は厳密比較のため、.upper() しない (元のまま)
-                            rakuten_sku_code_map = {str(row['SKU管理番号']).strip(): row.to_dict() for _, row in df_rakuten_h.iterrows()}
-                        
                         # グループマップの構築
                         if '商品管理番号（商品URL）' in df_rakuten_data.columns:
                             for _, row in df_rakuten_data.iterrows():
@@ -1188,7 +1181,7 @@ else:
                                 memo_map=memo_map,
                                 rakuten_product_id_map=rakuten_product_id_map,
                                 rakuten_management_id_map=rakuten_management_id_map,
-                                rakuten_sku_code_map=rakuten_sku_code_map,
+                                
                                 # 楽天のグループマップを渡す
                                 rakuten_group_map=rakuten_group_map
                             ) for portal in uploaded_portals
