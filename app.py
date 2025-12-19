@@ -249,15 +249,15 @@ else:
         "あとギフ": "返礼品コード",
         "楽天": "商品番号",
         "ANA": "返礼品識別コード",
-        "ふるなび": "外部返礼品コード", # 既存ロジック(index 19)とヘッダーリストを照合
+        "ふるなび": "外部返礼品コード",
         "JAL": "返礼品番号",
         "まいふる": "返礼品番号",
         "マイナビ": "返礼品番号",
-        "プレミアム": "SKU", # 既存ロジック(index 5)とヘッダーリストを照合
-        "JRE": "品番1", # 既存ロジック(index 2)とヘッダーリストを照合
-        "さとふる": "お礼品名", # 既存ロジック(index 1, [code]抽出)とヘッダーリストを照合
-        "さとふる在庫": "お礼品ID", # 既存ロジック(index 1)とヘッダーリストを照合
-        "Amazon": "出品者SKU", # 既存ロジック(index 0)とヘッダーリストを照合
+        "プレミアム": "SKU",
+        "JRE": "品番1",
+        "さとふる": "お礼品予備項目",
+        "さとふる在庫": "お礼品ID",
+        "Amazon": "出品者SKU",
         "百選": "返礼品コード",
         "百選在庫": "返礼品コード",
         "ぐるなび": "商品番号"
@@ -477,13 +477,7 @@ else:
                 st.error(f"ファイル '{sheet_name}' に必要なヘッダー '{key_col}' が見つかりません。")
                 return df
             
-            # さとふるの場合、正規表現でコードを抽出
-            if sheet_name == 'さとふる':
-                # 'お礼品名' 列(key_col)からコードを抽出 [xxxx] -> xxxx
-                item_code_series = data[key_col].astype(str).str.extract(r'\[(.*?)\]', expand=False).fillna('')
-            else:
-                # 他ポータルはそのままの値を使用
-                item_code_series = data[key_col].astype(str).str.strip()
+            item_code_series = data[key_col].astype(str).str.strip()
         
         else:
             # key_col が None または予期せぬ型
@@ -956,13 +950,8 @@ else:
                                 df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                             
                             elif isinstance(code_col, str):
-                                # (その他: ヘッダー名で参照)
-                                if base_portal_name == 'さとふる':
-                                    # すべて .str.upper() に統一
-                                    df_master_source['key'] = df_master_source[code_col].astype(str).str.extract(r'\[(.*?)\]', expand=False).fillna('').str.upper()
-                                else:
-                                    # すべて .str.upper() に統一
-                                    df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
+                                df_master_source['key'] = df_master_source[code_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
+                                
                             # 重複を除去
                             unique_items = df_master_source[df_master_source['key'] != ''].drop_duplicates(subset=['key'], keep='first')
 
@@ -1145,27 +1134,14 @@ else:
                             
                             df_cleaned = df_data_only.dropna(subset=[key_col]).copy()
                             
-                            if name == 'さとふる':
-                                temp_map = {}
-                                for _, row in df_cleaned.iterrows():
-                                    # 'お礼品名' 列(key_col)からコードを抽出
-                                    match = re.search(r'\[(.*?)\]', str(row.get(key_col, ''))) 
-                                    if match:
-                                        # すべて .upper() に統一
-                                        key = match.group(1).strip().upper()
-                                        if key and key not in temp_map:
-                                            # キーがヘッダー名('お礼品ID', 'お礼品名'...)の辞書を作成
-                                            temp_map[key] = row.to_dict()
-                                lookup_maps[name] = temp_map
-                            else:
-                                # BOM等の除去、.0除去、空白除去
-                                # すべて .str.upper() に統一
-                                df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
-                                df_cleaned = df_cleaned[df_cleaned['key_col_str'] != '']
-                                
-                                unique_data = df_cleaned.drop_duplicates(subset=['key_col_str'], keep='first')
-                                # キーがヘッダー名('商品番号', '商品名'...)の辞書を作成
-                                lookup_maps[name] = {row['key_col_str']: row.to_dict() for _, row in unique_data.iterrows()}
+                            # BOM等の除去、.0除去、空白除去
+                            # すべて .str.upper() に統一
+                            df_cleaned['key_col_str'] = df_cleaned[key_col].astype(str).str.replace('\ufeff', '', regex=False).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
+                            df_cleaned = df_cleaned[df_cleaned['key_col_str'] != '']
+                            
+                            unique_data = df_cleaned.drop_duplicates(subset=['key_col_str'], keep='first')
+                            # キーがヘッダー名('商品番号', '商品名'...)の辞書を作成
+                            lookup_maps[name] = {row['key_col_str']: row.to_dict() for _, row in unique_data.iterrows()}
 
                     results_data = []
                     uploaded_portals = [p for p in PORTAL_ORDER if p in full_data]
