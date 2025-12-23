@@ -293,7 +293,7 @@ def show_status_conditions():
         # --- あとギフ ---
         with tabs[13]:
             # --- パターンA: チョイス形式 ---
-            st.markdown("##### 📁 ファイル名に「チョイス」が含まれる場合")
+            st.markdown("##### 【チョイス形式】")
             rows = ""
             rows += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「返礼品コード」が存在しない場合")
             rows += create_status_row("非表示", "【2】 表示有無が 0", "「表示有無」の値が <code>0</code> の場合")
@@ -303,7 +303,7 @@ def show_status_conditions():
             st.divider() # 区切り線
 
             # --- パターンB: ふるなび形式 ---
-            st.markdown("##### 📁 ファイル名に「ふるなび」が含まれる場合")
+            st.markdown("##### 【ふるなび形式】　※データに「販売フラグ」列が存在する場合はこちら")
             rows_b = ""
             rows_b += create_status_row("未登録", "【1】 返礼品コードなし", "ファイルに該当の「返礼品コード」が存在しない場合")
             rows_b += create_status_row("非表示", "【2】 フラグが off", "「販売フラグ」または「公開フラグ」が <code>off</code> の場合")
