@@ -539,6 +539,9 @@ else:
     if 'f_check' not in st.session_state: st.session_state.f_check = "すべて"
     if 'f_teiki' not in st.session_state: st.session_state.f_teiki = "すべて"
 
+    if 'w_item_code' not in st.session_state: st.session_state.w_item_code = st.session_state.f_item_code
+    if 'w_vendor' not in st.session_state: st.session_state.w_vendor = st.session_state.f_vendor
+
     # --- ページネーション用のセッションステート ---
     if 'current_page' not in st.session_state:
         st.session_state.current_page = 1
@@ -565,13 +568,15 @@ else:
             filter_col1, filter_col2 = st.columns(2)
             with filter_col1:
                 item_codes_to_filter_input = st.text_area(
-                    "返礼品コード（改行区切りで入力）",
+                    "返礼品コード（改行区切り）",
+                    placeholder="XXX001\nXXX002\nXXX003",
                     height=150,
                     key="filter_item_codes"
                 )
             with filter_col2:
                 vendor_codes_to_filter_input = st.text_area(
-                    label="事業者コード（改行区切りで入力）", # labelを短縮
+                    label="事業者コード（改行区切り）",
+                    placeholder="XXX\nXXX\nXXX",
                     height=150,
                     key="filter_vendor_codes",
                     help="※アルファベット3文字 or アルファベット4文字 or 数字2文字+アルファベット4文字（計6文字）" # help引数に説明を追加
@@ -1393,14 +1398,40 @@ else:
 
         
         # --- 3. フィルターセクションの描画 ---
-        filter_cols = st.columns(5)
+        
+        # ★ 追加関数: 一括入力処理用 (Callback)
+        def bulk_input_callback(input_area_key, options_list, widget_key, logic_key):
+            input_text = st.session_state.get(input_area_key, "")
+            
+            # 空白の場合はリセットする処理
+            if not input_text or not input_text.strip():
+                st.session_state[widget_key] = [] # ウィジェットの選択状態をクリア
+                st.session_state[logic_key] = []  # フィルターロジックをクリア
+                return
 
-        # ★ コールバック関数 (session_stateに保存するため)
+            # 改行やカンマ、空白で区切ってリスト化
+            new_codes = [
+                c.strip() for c in re.split(r'[,\n\s]+', input_text) 
+                if c.strip()
+            ]
+            
+            # 選択肢(options)に存在するものだけを抽出 (完全一致)
+            # ※ setを使うことで高速に照合
+            valid_codes = sorted(list(set(new_codes) & set(options_list)))
+            
+            if valid_codes:
+                # 現在の選択に「追加」するのではなく、「上書き」する場合はこちら
+                st.session_state[widget_key] = valid_codes
+                st.session_state[logic_key] = valid_codes
+
+        # コールバック関数 (session_stateに保存するため)
         def update_f_search(): st.session_state.f_search = st.session_state.w_search
         def update_f_item_code(): st.session_state.f_item_code = st.session_state.w_item_code
         def update_f_vendor(): st.session_state.f_vendor = st.session_state.w_vendor
         def update_f_check(): st.session_state.f_check = st.session_state.w_check
         def update_f_teiki(): st.session_state.f_teiki = st.session_state.w_teiki
+
+        filter_cols = st.columns(5)
 
         with filter_cols[0]:
             # 全文検索
@@ -1414,14 +1445,14 @@ else:
 
         with filter_cols[1]:
             # 返礼品コード (静的選択肢)
-            # ★ 選択されている値は、計算結果に含まれていなくても選択肢（Options）に追加する
+            # 選択されている値は、計算結果に含まれていなくても選択肢（Options）に追加して表示落ちを防ぐ
             current_item_selection = st.session_state.f_item_code
-            item_code_options = sorted(list(set(item_code_options) | set(current_item_selection)))
+            display_item_options = sorted(list(set(item_code_options) | set(current_item_selection)))
             
             st.multiselect(
                 "返礼品コード:",
-                options=item_code_options, 
-                default=st.session_state.f_item_code,
+                options=display_item_options, 
+                #default=st.session_state.f_item_code,
                 key="w_item_code",
                 on_change=update_f_item_code,
                 placeholder="コードを選択"
@@ -1430,12 +1461,12 @@ else:
         with filter_cols[2]:
             # 事業者コード (静的選択肢)
             current_vendor_selection = st.session_state.f_vendor
-            vendor_options = sorted(list(set(vendor_options) | set(current_vendor_selection)))
+            display_vendor_options = sorted(list(set(vendor_options) | set(current_vendor_selection)))
             
             st.multiselect(
                 "事業者コード:",
-                options=vendor_options, 
-                default=st.session_state.f_vendor,
+                options=display_vendor_options, 
+                #default=st.session_state.f_vendor,
                 key="w_vendor",
                 on_change=update_f_vendor,
                 placeholder="コードを選択"
@@ -1444,6 +1475,7 @@ else:
         with filter_cols[3]:
             # チェック (静的選択肢)
             current_check = st.session_state.f_check
+            # 選択肢が変わって値が不正になった場合のケア
             if current_check not in check_options:
                 current_check = "すべて"
                 st.session_state.f_check = "すべて"
@@ -1474,6 +1506,34 @@ else:
                 key="w_teiki",
                 on_change=update_f_teiki
             )
+        
+        # --- コード一括設定ツール ---
+        with st.expander("コード一括設定"):
+            st.info("""
+                コードを入力して「適用」ボタンを押すと、上のフィルターに反映されます。※ヒットするコードのみが適用されます。
+            """)
+            bulk_col1, bulk_col2 = st.columns(2)
+            
+            with bulk_col1:
+                # フォームを使ってEnterキーでのリロードを防ぐ（任意ですがボタン押下のみで動くように）
+                with st.form("bulk_item_form"):
+                    st.text_area("返礼品コード（改行区切り）", height=150, placeholder="XXX001\nXXX002\nXXX003", key="bulk_item_area")
+                    # コールバック関数を使って、画面描画前に値を更新する（エラー回避）
+                    st.form_submit_button(
+                        "返礼品コードをフィルターに適用", 
+                        on_click=bulk_input_callback, 
+                        args=("bulk_item_area", item_code_options, 'w_item_code', 'f_item_code')
+                    )
+
+            with bulk_col2:
+                with st.form("bulk_vendor_form"):
+                    st.text_area("事業者コード（改行区切り）", height=150, placeholder="XXX\nXXX\nXXX", key="bulk_vendor_area")
+                    # コールバック関数を使って、画面描画前に値を更新する（エラー回避）
+                    st.form_submit_button(
+                        "事業者コードをフィルターに適用", 
+                        on_click=bulk_input_callback, 
+                        args=("bulk_vendor_area", vendor_options, 'w_vendor', 'f_vendor')
+                    )
         
         # --- 4. 最終的な表示データの作成 ---
         # すべてのマスクを適用して絞り込む
