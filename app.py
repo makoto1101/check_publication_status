@@ -1375,25 +1375,20 @@ else:
         if st.session_state.f_teiki != "すべて":
             mask_teiki = df_source['定期便フラグ'] == st.session_state.f_teiki
 
-        # --- 2. 各フィルターの選択肢を動的に生成 ---
-        # 自分以外のフィルター条件をすべて適用したデータからユニーク値を抽出する
+        # --- 2. 各フィルターの選択肢を生成 ---
 
-        # 返礼品コードの選択肢: (自分以外 = 検索 & 事業者 & チェック & 定期便)
-        df_for_item = df_source[mask_search & mask_vendor & mask_check & mask_teiki]
-        item_code_options = sorted(df_for_item['返礼品コード'].dropna().unique())
+        # 返礼品コードの選択肢 (全量から作成)
+        item_code_options = sorted(df_source['返礼品コード'].dropna().unique())
 
-        # 事業者コードの選択肢: (自分以外 = 検索 & 返礼品 & チェック & 定期便)
-        df_for_vendor = df_source[mask_search & mask_item & mask_check & mask_teiki]
-        vendor_options = sorted(df_for_vendor['事業者コード'].dropna().unique())
+        # 事業者コードの選択肢 (全量から作成)
+        vendor_options = sorted(df_source['事業者コード'].dropna().unique())
 
-        # チェックの選択肢: (自分以外 = 検索 & 返礼品 & 事業者 & 定期便)
-        df_for_check = df_source[mask_search & mask_item & mask_vendor & mask_teiki]
-        check_vals = sorted(df_for_check['チェック'].dropna().unique())
+        # チェックの選択肢 (全量から作成)
+        check_vals = sorted(df_source['チェック'].dropna().unique())
         check_options = ["すべて"] + check_vals
 
-        # 定期便の選択肢: (自分以外 = 検索 & 返礼品 & 事業者 & チェック)
-        df_for_teiki = df_source[mask_search & mask_item & mask_vendor & mask_check]
-        teiki_vals = sorted(df_for_teiki['定期便フラグ'].dropna().unique())
+        # 定期便の選択肢 (全量から作成)
+        teiki_vals = sorted(df_source['定期便フラグ'].dropna().unique())
         teiki_options = ["すべて"] + teiki_vals
 
         
@@ -1418,16 +1413,14 @@ else:
             )
 
         with filter_cols[1]:
-            # 返礼品コード (動的選択肢)
-            # ★ デフォルト値が新しい選択肢に含まれているか確認し、含まれていない場合は除外する... ではなく
-            # ★ 選択されている値は、計算結果に含まれていなくても選択肢（Options）に追加する (Union)
+            # 返礼品コード (静的選択肢)
+            # ★ 選択されている値は、計算結果に含まれていなくても選択肢（Options）に追加する
             current_item_selection = st.session_state.f_item_code
-            # 選択中のアイテム + 計算されたオプション を結合してソート
             item_code_options = sorted(list(set(item_code_options) | set(current_item_selection)))
             
             st.multiselect(
                 "返礼品コード:",
-                options=item_code_options, # 計算した動的リストを使用
+                options=item_code_options, 
                 default=st.session_state.f_item_code,
                 key="w_item_code",
                 on_change=update_f_item_code,
@@ -1435,15 +1428,13 @@ else:
             )
 
         with filter_cols[2]:
-            # 事業者コード (動的選択肢)
-            # ★ 選択されている値は、計算結果に含まれていなくても選択肢（Options）に追加する (Union)
+            # 事業者コード (静的選択肢)
             current_vendor_selection = st.session_state.f_vendor
-            # 選択中のアイテム + 計算されたオプション を結合してソート
             vendor_options = sorted(list(set(vendor_options) | set(current_vendor_selection)))
             
             st.multiselect(
                 "事業者コード:",
-                options=vendor_options, # 計算した動的リストを使用
+                options=vendor_options, 
                 default=st.session_state.f_vendor,
                 key="w_vendor",
                 on_change=update_f_vendor,
@@ -1451,8 +1442,7 @@ else:
             )
 
         with filter_cols[3]:
-            # チェック (動的選択肢)
-            # 現在の選択値が新しい選択肢に含まれていない場合のケア
+            # チェック (静的選択肢)
             current_check = st.session_state.f_check
             if current_check not in check_options:
                 current_check = "すべて"
@@ -1462,14 +1452,14 @@ else:
             
             st.selectbox(
                 "チェック:",
-                check_options, # 計算した動的リストを使用
+                check_options, 
                 index=c_index,
                 key="w_check",
                 on_change=update_f_check
             )
 
         with filter_cols[4]:
-            # 定期便 (動的選択肢)
+            # 定期便 (静的選択肢)
             current_teiki = st.session_state.f_teiki
             if current_teiki not in teiki_options:
                 current_teiki = "すべて"
@@ -1479,7 +1469,7 @@ else:
             
             st.selectbox(
                 "定期便:",
-                teiki_options, # 計算した動的リストを使用
+                teiki_options, 
                 index=t_index,
                 key="w_teiki",
                 on_change=update_f_teiki
