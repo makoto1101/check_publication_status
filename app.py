@@ -534,7 +534,8 @@ else:
 
     # --- フィルター状態の初期化 (リセットされないようにsession_stateで管理) ---
     if 'f_search' not in st.session_state: st.session_state.f_search = ""
-    if 'f_vendor' not in st.session_state: st.session_state.f_vendor = "すべて"
+    if 'f_item_code' not in st.session_state: st.session_state.f_item_code = [] 
+    if 'f_vendor' not in st.session_state: st.session_state.f_vendor = [] 
     if 'f_check' not in st.session_state: st.session_state.f_check = "すべて"
     if 'f_teiki' not in st.session_state: st.session_state.f_teiki = "すべて"
 
@@ -1338,85 +1339,156 @@ else:
         else:
             st.info("ファイルやDBをサイドバーから設定し、「掲載状況を表示」ボタンを押してください。")
     else:
-        df_to_display = st.session_state.results_df.copy()
+        # ソースデータとしてセッションステートのDFを使用
+        df_source = st.session_state.results_df
+
+        # --- 1. 各フィルターのマスク（条件）を作成 ---
+        # フィルターが選択されていない場合は全データ対象(True)とする
+
+        # (1) 全文検索マスク
+        mask_search = pd.Series(True, index=df_source.index)
+        if st.session_state.f_search:
+            s = st.session_state.f_search
+            mask_search = (
+                df_source['返礼品コード'].str.contains(s, na=False, case=False) |
+                df_source['返礼品名'].str.contains(s, na=False, case=False) |
+                df_source['事業者名'].str.contains(s, na=False, case=False)
+            )
+
+        # (2) 返礼品コードマスク
+        mask_item = pd.Series(True, index=df_source.index)
+        if st.session_state.f_item_code:
+            mask_item = df_source['返礼品コード'].isin(st.session_state.f_item_code)
+
+        # (3) 事業者コードマスク
+        mask_vendor = pd.Series(True, index=df_source.index)
+        if st.session_state.f_vendor:
+            mask_vendor = df_source['事業者コード'].isin(st.session_state.f_vendor)
+
+        # (4) チェックマスク
+        mask_check = pd.Series(True, index=df_source.index)
+        if st.session_state.f_check != "すべて":
+            mask_check = df_source['チェック'] == st.session_state.f_check
+
+        # (5) 定期便マスク
+        mask_teiki = pd.Series(True, index=df_source.index)
+        if st.session_state.f_teiki != "すべて":
+            mask_teiki = df_source['定期便フラグ'] == st.session_state.f_teiki
+
+        # --- 2. 各フィルターの選択肢を動的に生成 ---
+        # 自分以外のフィルター条件をすべて適用したデータからユニーク値を抽出する
+
+        # 返礼品コードの選択肢: (自分以外 = 検索 & 事業者 & チェック & 定期便)
+        df_for_item = df_source[mask_search & mask_vendor & mask_check & mask_teiki]
+        item_code_options = sorted(df_for_item['返礼品コード'].dropna().unique())
+
+        # 事業者コードの選択肢: (自分以外 = 検索 & 返礼品 & チェック & 定期便)
+        df_for_vendor = df_source[mask_search & mask_item & mask_check & mask_teiki]
+        vendor_options = sorted(df_for_vendor['事業者コード'].dropna().unique())
+
+        # チェックの選択肢: (自分以外 = 検索 & 返礼品 & 事業者 & 定期便)
+        df_for_check = df_source[mask_search & mask_item & mask_vendor & mask_teiki]
+        check_vals = sorted(df_for_check['チェック'].dropna().unique())
+        check_options = ["すべて"] + check_vals
+
+        # 定期便の選択肢: (自分以外 = 検索 & 返礼品 & 事業者 & チェック)
+        df_for_teiki = df_source[mask_search & mask_item & mask_vendor & mask_check]
+        teiki_vals = sorted(df_for_teiki['定期便フラグ'].dropna().unique())
+        teiki_options = ["すべて"] + teiki_vals
+
         
-        # --- フィルターセクション ---
-        filter_cols = st.columns(4)
+        # --- 3. フィルターセクションの描画 ---
+        filter_cols = st.columns(5)
 
         # ★ コールバック関数 (session_stateに保存するため)
         def update_f_search(): st.session_state.f_search = st.session_state.w_search
+        def update_f_item_code(): st.session_state.f_item_code = st.session_state.w_item_code
         def update_f_vendor(): st.session_state.f_vendor = st.session_state.w_vendor
         def update_f_check(): st.session_state.f_check = st.session_state.w_check
         def update_f_teiki(): st.session_state.f_teiki = st.session_state.w_teiki
 
         with filter_cols[0]:
-            # 全文検索: session_state.f_search の値を使用
+            # 全文検索
             st.text_input(
-                "全文検索 (コード/返礼品名/事業者名):",
+                "全文検索:",
                 value=st.session_state.f_search,
                 key="w_search",
-                on_change=update_f_search
+                on_change=update_f_search,
+                placeholder="キーワードを入力"
             )
-            # フィルタリング適用
-            if st.session_state.f_search:
-                search_text = st.session_state.f_search
-                df_to_display = df_to_display[
-                    df_to_display['返礼品コード'].str.contains(search_text, na=False, case=False) |
-                    df_to_display['返礼品名'].str.contains(search_text, na=False, case=False) |
-                    df_to_display['事業者名'].str.contains(search_text, na=False, case=False)
-                ]
 
         with filter_cols[1]:
-            vendor_list = sorted(st.session_state.results_df['事業者コード'].unique())
-            vendor_options = ["すべて"] + vendor_list
+            # 返礼品コード (動的選択肢)
+            # ★ デフォルト値が新しい選択肢に含まれているか確認し、含まれていない場合は除外する... ではなく
+            # ★ 選択されている値は、計算結果に含まれていなくても選択肢（Options）に追加する (Union)
+            current_item_selection = st.session_state.f_item_code
+            # 選択中のアイテム + 計算されたオプション を結合してソート
+            item_code_options = sorted(list(set(item_code_options) | set(current_item_selection)))
             
-            # 選択肢のインデックスを計算
-            current_vendor = st.session_state.f_vendor
-            v_index = vendor_options.index(current_vendor) if current_vendor in vendor_options else 0
-
-            st.selectbox(
-                "事業者コード:",
-                vendor_options,
-                index=v_index,
-                key="w_vendor",
-                on_change=update_f_vendor
+            st.multiselect(
+                "返礼品コード:",
+                options=item_code_options, # 計算した動的リストを使用
+                default=st.session_state.f_item_code,
+                key="w_item_code",
+                on_change=update_f_item_code,
+                placeholder="コードを選択"
             )
-            # フィルタリング適用
-            if st.session_state.f_vendor != "すべて":
-                df_to_display = df_to_display[df_to_display['事業者コード'] == st.session_state.f_vendor]
 
         with filter_cols[2]:
-            check_options = ["すべて", "OK", "要確認"]
+            # 事業者コード (動的選択肢)
+            # ★ 選択されている値は、計算結果に含まれていなくても選択肢（Options）に追加する (Union)
+            current_vendor_selection = st.session_state.f_vendor
+            # 選択中のアイテム + 計算されたオプション を結合してソート
+            vendor_options = sorted(list(set(vendor_options) | set(current_vendor_selection)))
+            
+            st.multiselect(
+                "事業者コード:",
+                options=vendor_options, # 計算した動的リストを使用
+                default=st.session_state.f_vendor,
+                key="w_vendor",
+                on_change=update_f_vendor,
+                placeholder="コードを選択"
+            )
+
+        with filter_cols[3]:
+            # チェック (動的選択肢)
+            # 現在の選択値が新しい選択肢に含まれていない場合のケア
             current_check = st.session_state.f_check
-            c_index = check_options.index(current_check) if current_check in check_options else 0
+            if current_check not in check_options:
+                current_check = "すべて"
+                st.session_state.f_check = "すべて"
+            
+            c_index = check_options.index(current_check)
             
             st.selectbox(
                 "チェック:",
-                check_options,
+                check_options, # 計算した動的リストを使用
                 index=c_index,
                 key="w_check",
                 on_change=update_f_check
             )
-            # フィルタリング適用
-            if st.session_state.f_check != "すべて":
-                df_to_display = df_to_display[df_to_display['チェック'] == st.session_state.f_check]
 
-        with filter_cols[3]:
-            teiki_options = ["すべて", "〇", "×"]
+        with filter_cols[4]:
+            # 定期便 (動的選択肢)
             current_teiki = st.session_state.f_teiki
-            t_index = teiki_options.index(current_teiki) if current_teiki in teiki_options else 0
+            if current_teiki not in teiki_options:
+                current_teiki = "すべて"
+                st.session_state.f_teiki = "すべて"
+
+            t_index = teiki_options.index(current_teiki)
             
             st.selectbox(
                 "定期便:",
-                teiki_options,
+                teiki_options, # 計算した動的リストを使用
                 index=t_index,
                 key="w_teiki",
                 on_change=update_f_teiki
             )
-            # フィルタリング適用
-            if st.session_state.f_teiki != "すべて":
-                df_to_display = df_to_display[df_to_display['定期便フラグ'] == st.session_state.f_teiki]
         
+        # --- 4. 最終的な表示データの作成 ---
+        # すべてのマスクを適用して絞り込む
+        df_to_display = df_source[mask_search & mask_item & mask_vendor & mask_check & mask_teiki]
+
         # --- ページネーション設定 (★ DataFrame描画前に計算処理を移動 ★) ---
         # 1ページあたりの表示件数
         ITEMS_PER_PAGE = 500 
@@ -1759,7 +1831,7 @@ else:
                     keys_to_clear = [
                         'results_df', 'dataframes', 'choice_stock_processed', 'rakuten_merged',
                         'current_select_date_str', 'current_base_portal',
-                        'f_search', 'f_vendor', 'f_check', 'f_teiki' # ★ フィルター設定もクリア
+                        'f_search', 'f_vendor', 'f_item_code', 'f_check', 'f_teiki' # ★ フィルター設定もクリア
                     ]
                     for key in keys_to_clear:
                         if key in st.session_state:
