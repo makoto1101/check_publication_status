@@ -18,6 +18,8 @@ from status import calculate_status
 from operation_manual import show_instructions
 # --- ステータス判定条件をインポート ---
 from status_manual import show_status_conditions
+# --- ヘッダー定義マニュアルをインポート ---
+from header_manual import show_header_definitions
 # --- ログ機能をインポート ---
 # from log import write_log  # ★ログ出力停止のためコメントアウト
 
@@ -79,10 +81,10 @@ if not st.user.get("is_logged_in", False):
 
 # 2. ログイン済みの場合: メインアプリを表示
 else:
-    # --- ヘッダーエリア（マニュアル・ステータス条件・ユーザー名・ログアウト） ---
-    # レイアウト調整: [操作マニュアル] [判定条件] [空白] [ユーザー名] [ログアウト]
-    # カラム比率を調整してボタンを並べる
-    col_manual, col_status_link, _, col_user, col_logout = st.columns([2, 2.5, 3, 4.5, 2.2], gap="small")
+    # --- ヘッダーエリア（マニュアル・ステータス条件・ヘッダー定義・ユーザー名・ログアウト） ---
+    # レイアウト調整: [操作マニュアル] [判定条件] [ヘッダー一覧(新規)] [空白] [ユーザー名] [ログアウト]
+    # カラム比率を調整してボタンを並べる (空白を削ってボタン領域を確保)
+    col_manual, col_status_link, col_header_link, _, col_user, col_logout = st.columns([2, 2.5, 2.5, 0.5, 4.5, 2.2], gap="small")
     
     # 1. 操作マニュアル（リンク風ボタン）
     with col_manual:
@@ -98,12 +100,19 @@ else:
             show_status_conditions()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 3. ユーザー名表示
+    # 3. ヘッダー定義一覧（リンク風ボタン）
+    with col_header_link:
+        st.markdown("<div style='margin-top: 15px;'>", unsafe_allow_html=True)
+        if st.button("📋 取込ヘッダー一覧", type="tertiary"):
+            show_header_definitions()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # 4. ユーザー名表示
     with col_user:
         # ユーザー名は st.user.name で取得可能
         st.markdown(f"<div style='text-align: right; margin-top: 22px;'>ようこそ <b>{st.user.name}</b> さん</div>", unsafe_allow_html=True)
     
-    # 4. ログアウトボタン
+    # 5. ログアウトボタン
     with col_logout:
         st.markdown("<div style='margin-top: 0px;'>", unsafe_allow_html=True)
         if st.button("ログアウト", width='stretch'):
@@ -254,7 +263,7 @@ else:
         "まいふる": "返礼品番号",
         "マイナビ": "返礼品番号",
         "プレミアム": "SKU",
-        "JRE": "品番1",
+        "JRE": "自治体管理番号",
         "さとふる": "お礼品予備項目",
         "さとふる在庫": "お礼品ID",
         "Amazon": "出品者SKU",
@@ -295,7 +304,7 @@ else:
         "まいふる": {"返礼品番号", "ステータス", "状態", "在庫数", "表示開始日時", "表示終了日時", "寄附開始日時", "寄附終了日時"},
         "マイナビ": {"返礼品番号", "ステータス", "表示設定", "在庫数", "表示開始日時", "表示終了日時", "寄附開始日時", "寄附終了日時"},
         "プレミアム": {"SKU", "公開ステータス", "在庫数", "公開開始日時", "公開終了日時"},
-        "JRE": {"品番1", "掲載ステータス", "掲載期間（開始）", "掲載期間（終了）", "在庫扱いの種別", "在庫数", "販売期間（開始）", "販売期間（終了）"},
+        "JRE": {"自治体管理番号", "掲載ステータス", "掲載期間（開始）", "掲載期間（終了）", "在庫扱いの種別", "在庫数", "販売期間（開始）", "販売期間（終了）"},
         "さとふる": {"お礼品予備項目", "公開フラグ", "お礼品ID"},
         "さとふる在庫": {"お礼品ID", "全在庫数", "受付開始日", "受付終了日"},
         "Amazon": {"出品者SKU", "数量"}, # リネーム後のカラム名
