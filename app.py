@@ -408,6 +408,10 @@ else:
     def generate_vendor_code(item_code):
         """返礼品コードから事業者コードを生成する"""
         code = str(item_code).strip()
+        # 楽天親コードの場合は、接尾辞を除去してから判定
+        if code.endswith('（楽天親）'):
+            code = code.replace('（楽天親）', '')
+
         if not code: return ''
         if re.match(r'^\d{2}[A-Z]{4}', code): return code[:6]
         if re.match(r'^[A-Z]{4}', code): return code[:4]
@@ -743,27 +747,51 @@ else:
                                 st.error(f"⚠️ **{file.name}** はインポートできませんでした。以下の必須列が不足しています: {', '.join(missing_cols)}")
                                 continue  # このファイルの処理をスキップして次のファイルへ
                             
-                            # 2. データ加工: 「システム連携用SKU番号」に値がある場合のみ、「商品番号」にコピー
-                            # (空文字でない場合のみ上書きする)
-                            mask_sku = df['システム連携用SKU番号'] != ''
-                            df.loc[mask_sku, '商品番号'] = df.loc[mask_sku, 'システム連携用SKU番号']
-
-                            # 3. データ加工: 「SKU倉庫指定」に値がある場合のみ、「倉庫指定」にコピー
-                            # (空文字でない場合のみ上書きする)
-                            mask_warehouse = df['SKU倉庫指定'] != ''
-                            df.loc[mask_warehouse, '倉庫指定'] = df.loc[mask_warehouse, 'SKU倉庫指定']
-
-                            # 4. データ加工: 先頭行のデータを同グループの下行へコピー (groupby + transform first)
+                            # 2. データ加工: 先頭行のデータを同グループの下行へコピー (fill-down)
+                            # ★【修正】親判定のために「商品番号」をfill-downしてはいけないため、リストから除外
                             fill_targets = ['商品名', 'サーチ表示', '販売期間指定（開始日時）', '販売期間指定（終了日時）', '注文ボタン']
                             
-                            # ★高速化: groupby().transform('first') の代わりに map を使用
-                            # 商品管理番号でグループ化し、各ターゲット列について、グループ内の先頭の値を全体に適用する
-                            # reset_index等は不要、Seriesとして取得
                             grouped_first = df.groupby('商品管理番号（商品URL）')[fill_targets].first()
                             
                             for col in fill_targets:
-                                # マッピング実行 (transformより圧倒的に速い)
+                                # マッピング実行
                                 df[col] = df['商品管理番号（商品URL）'].map(grouped_first[col])
+
+                            # 3. 親判定処理（グループ>=3 の場合、先頭行を親とする）
+                            # fill-down直後に実行することで、商品番号が埋まった状態で判定可能（ただしSKU上書き前）
+                            
+                            # グループごとの件数を計算
+                            group_counts = df['商品管理番号（商品URL）'].value_counts()
+                            # 3行以上のグループURLを抽出
+                            large_group_urls = group_counts[group_counts >= 3].index
+                            
+                            # 処理対象の行をフィルタリングしてループ処理（高速化のため）
+                            if not large_group_urls.empty:
+                                mask_large = df['商品管理番号（商品URL）'].isin(large_group_urls)
+                                df_large = df[mask_large]
+                                
+                                # 変更対象のインデックスリスト
+                                indices_to_modify = []
+                                
+                                for url, group in df_large.groupby('商品管理番号（商品URL）'):
+                                    # グループ先頭行のインデックス
+                                    first_idx = group.index[0]
+                                    indices_to_modify.append(first_idx)
+                                
+                                # 対象行の商品番号に「（楽天親）」を付与
+                                if indices_to_modify:
+                                    df.loc[indices_to_modify, '商品番号'] = df.loc[indices_to_modify, '商品番号'].astype(str) + '（楽天親）'
+
+                            # 4. データ加工: 「システム連携用SKU番号」に値がある場合のみ、「商品番号」にコピー
+                            # (空文字でない場合のみ上書きする)
+                            # ★ 親判定後に実行することで、SKU行はSKU番号になり、親行（SKUなし）は変更後の商品番号（楽天親）が維持される
+                            mask_sku = df['システム連携用SKU番号'] != ''
+                            df.loc[mask_sku, '商品番号'] = df.loc[mask_sku, 'システム連携用SKU番号']
+
+                            # 5. データ加工: 「SKU倉庫指定」に値がある場合のみ、「倉庫指定」にコピー
+                            # (空文字でない場合のみ上書きする)
+                            mask_warehouse = df['SKU倉庫指定'] != ''
+                            df.loc[mask_warehouse, '倉庫指定'] = df.loc[mask_warehouse, 'SKU倉庫指定']
                         
                         # -----------------------------------
 
@@ -1024,6 +1052,18 @@ else:
                                         item_name = ""
                                 master_items[item_code] = item_name
                         
+                        # --- 親コードをマスターに追加（楽天以外がベースの場合） ---
+                        if base_portal_name != '楽天' and '楽天' in full_data:
+                            df_rakuten_check = full_data['楽天']
+                            if '商品番号' in df_rakuten_check.columns:
+                                # （楽天親）で終わるコードを抽出
+                                parent_codes = df_rakuten_check[df_rakuten_check['商品番号'].astype(str).str.endswith('（楽天親）')]['商品番号'].unique()
+                                for p_code in parent_codes:
+                                    p_code_str = str(p_code).strip().upper()
+                                    if p_code_str not in master_items:
+                                        # マスターに存在しない場合は追加。名称はここでは空にしておき、後続のループで取得ロジックに任せる
+                                        master_items[p_code_str] = ""
+
                     lookup_maps, parent_lookup_maps = {}, {}
 
                     # --- 楽天ステータス判定用のデータ準備 ---
@@ -1036,6 +1076,9 @@ else:
                     
                     # 楽天のグループマップ作成 (商品管理番号 -> 行リスト)
                     rakuten_group_map = {}
+                    
+                    # ソート用のURLマップ（商品番号 -> 商品管理番号）
+                    item_code_to_mgmt_id_map = {}
 
                     if '楽天' in full_data:
                         df_rakuten = full_data['楽天']
@@ -1111,7 +1154,7 @@ else:
                             
                             # SKUありのグループ
                             df_sku = df_rakuten_b[has_sku_mask].copy()
-                            # SKUなしのグループ
+                            # SKUなしのグループ (親コード含む)
                             df_no_sku = df_rakuten_b[~has_sku_mask].copy()
 
                             # SKUありグループのみ、優先度順にソートする
@@ -1139,10 +1182,18 @@ else:
                             df_rakuten_b['商品番号'] = df_rakuten_b['商品番号'].astype(str).str.strip().str.upper()
 
                             # 重複排除 (keep='first'なので、SKUありが優先され、同グループ内ではソート上位/ファイル上位が残る)
+                            # ※ 親コード（楽天親）はコード自体が異なるため、子コード（SKU）とは別物として残る
                             df_rakuten_b = df_rakuten_b.drop_duplicates(subset=['商品番号'], keep='first')
                             
                             # 辞書化
                             rakuten_product_id_map = {str(row['商品番号']).strip().upper(): row.to_dict() for _, row in df_rakuten_b.iterrows()}
+                            
+                            # ソート用のマップ作成 (商品番号 -> 商品管理番号)
+                            if '商品管理番号（商品URL）' in df_rakuten_b.columns:
+                                item_code_to_mgmt_id_map = {
+                                    str(row['商品番号']).strip().upper(): str(row['商品管理番号（商品URL）']).strip() 
+                                    for _, row in df_rakuten_b.iterrows()
+                                }
                         
                         # A列(商品管理番号（商品URL）) -> 行データ
                         if '商品管理番号（商品URL）' in df_rakuten_data.columns:
@@ -1205,22 +1256,64 @@ else:
                     uploaded_portals = [p for p in PORTAL_ORDER if p in full_data]
 
                     for code, name in master_items.items():
-                        statuses = {
-                            portal: calculate_status(
-                                portal, code, lookup_maps, parent_lookup_maps,
-                                
-                                # 基準日(文字列)をキーワード引数として渡す
-                                select_date_str=select_date_str,
-                                
-                                # 楽天用の辞書をキーワード引数として渡す
-                                memo_map=memo_map,
-                                rakuten_product_id_map=rakuten_product_id_map,
-                                rakuten_management_id_map=rakuten_management_id_map,
-                                
-                                # 楽天のグループマップを渡す
-                                rakuten_group_map=rakuten_group_map
-                            ) for portal in uploaded_portals
-                        }
+                        
+                        # 親コード判定と名称処理
+                        is_rakuten_parent = code.endswith('（楽天親）')
+                        target_code_for_name = code.replace('（楽天親）', '') if is_rakuten_parent else code
+                        
+                        # 親コードの場合、名称を再取得（接尾辞なしのコードで）
+                        display_name = name
+                        if is_rakuten_parent:
+                            # マスターアイテムに接尾辞なしのコードがあればその名前を使う
+                            if target_code_for_name in master_items and master_items[target_code_for_name]:
+                                display_name = master_items[target_code_for_name]
+                            # なければ、楽天データから名称を取得を試みる
+                            elif '楽天' in lookup_maps and code in lookup_maps['楽天']:
+                                display_name = lookup_maps['楽天'][code].get('商品名', '')
+
+                        # ★【改修】「子行」が楽天データ内に存在するかチェック
+                        child_exists_exact_match = False
+                        if is_rakuten_parent and '楽天' in lookup_maps:
+                            # サフィックスなしのコードが楽天のマップにあるか
+                            if target_code_for_name in lookup_maps['楽天']:
+                                child_exists_exact_match = True
+
+                        statuses = {}
+                        for portal in uploaded_portals:
+                            
+                            # 検索に使うコードを決定
+                            lookup_code = code
+                            skip_calculation = False
+
+                            if is_rakuten_parent:
+                                if portal == '楽天':
+                                    lookup_code = code # 親はそのまま（楽天親）で検索
+                                else:
+                                    # 楽天以外のポータル
+                                    if child_exists_exact_match:
+                                        # 子行が存在する場合 -> 親行の結果は空白にする (子行側に出るため)
+                                        skip_calculation = True
+                                    else:
+                                        # 子行が存在しない場合 -> 親行に結果を表示する (サフィックスなしで検索)
+                                        lookup_code = target_code_for_name
+
+                            if skip_calculation:
+                                statuses[portal] = ''
+                            else:
+                                statuses[portal] = calculate_status(
+                                    portal, lookup_code, lookup_maps, parent_lookup_maps,
+                                    
+                                    # 基準日(文字列)をキーワード引数として渡す
+                                    select_date_str=select_date_str,
+                                    
+                                    # 楽天用の辞書をキーワード引数として渡す
+                                    memo_map=memo_map,
+                                    rakuten_product_id_map=rakuten_product_id_map,
+                                    rakuten_management_id_map=rakuten_management_id_map,
+                                    
+                                    # 楽天のグループマップを渡す
+                                    rakuten_group_map=rakuten_group_map
+                                )
                         
                         status_values = list(statuses.values())
                         
@@ -1231,27 +1324,63 @@ else:
                         allowed_gray_statuses = {'非表示', '在庫0', '受付終了', '倉庫', '注文不可'}
                         
                         # グレーゾーン以外のステータス（公開中、未登録など）を抽出
-                        main_statuses = unique_statuses - allowed_gray_statuses
+                        # 空白（親コードの他ポータル分）は無視する
+                        main_statuses = {s for s in unique_statuses if s not in allowed_gray_statuses and s != ''}
                         
                         # グレーゾーンのステータスを抽出
                         gray_statuses = unique_statuses.intersection(allowed_gray_statuses)
                         
                         check_val = "OK" # デフォルトをOKに設定
                         
-                        # パターン1: グレーゾーン以外のステータスが2種類以上ある場合 (例: '公開中'と'未登録')
-                        if len(main_statuses) >= 2:
-                            check_val = "要確認"
-                        
-                        # パターン2: グレーゾーン以外のステータスが1種類あり、かつグレーゾーンのステータスも1種類以上ある場合 (例: '公開中'と'在庫0')
-                        elif len(main_statuses) == 1 and len(gray_statuses) >= 1:
-                            check_val = "要確認"
+                        # 親行のチェック列判定ロジック変更
+                        if is_rakuten_parent:
+                            # 親行の場合、「公開中」ならOK、それ以外は要確認
+                            # 親行は楽天以外の結果が空になる可能性があるため、楽天の結果を重視
+                            if statuses.get('楽天') == '公開中':
+                                check_val = 'OK'
+                            else:
+                                check_val = '要確認'
+                        else:
+                            # 通常行のロジック
+                            # パターン1: グレーゾーン以外のステータスが2種類以上ある場合 (例: '公開中'と'未登録')
+                            if len(main_statuses) >= 2:
+                                check_val = "要確認"
+                            # パターン2: グレーゾーン以外のステータスが1種類あり、かつグレーゾーンのステータスも1種類以上ある場合 (例: '公開中'と'在庫0')
+                            elif len(main_statuses) == 1 and len(gray_statuses) >= 1:
+                                check_val = "要確認"
                         
                         public_count = sum(1 for s in status_values if s == '公開中')
                         
-                        teiki_bin_flag = '〇' if code in teiki_bin_codes else '×'
-                            
-                        result_row = {'返礼品コード': code, '返礼品名': name, '事業者コード': generate_vendor_code(code), **statuses,
-                                      'チェック': check_val, '定期便フラグ': teiki_bin_flag, '公開中の数': public_count}
+                        teiki_bin_flag = '〇' if target_code_for_name in teiki_bin_codes else '×'
+                        
+                        # ソート用のデータを収集
+                        # ソート順: ①商品管理番号(URL) -> ②返礼品コード(サフィックスなし) -> ③親コード優先(0:親, 1:子)
+                        
+                        # 1. URL取得
+                        mgmt_id = item_code_to_mgmt_id_map.get(code, '')
+                        if not mgmt_id and is_rakuten_parent:
+                             # 親コードでマップにない場合、サフィックスなしで検索トライ
+                             mgmt_id = item_code_to_mgmt_id_map.get(target_code_for_name, '')
+                        # それでもなければ、返礼品コード自体をグループキーとして代用し、末尾に回す
+                        if not mgmt_id:
+                            mgmt_id = target_code_for_name
+
+                        # 2. 親判定ランク (0: 親, 1: 子)
+                        rank_val = 0 if is_rakuten_parent else 1
+
+                        result_row = {
+                            '返礼品コード': code, 
+                            '返礼品名': display_name, 
+                            '事業者コード': generate_vendor_code(target_code_for_name), 
+                            **statuses,
+                            'チェック': check_val, 
+                            '定期便フラグ': teiki_bin_flag, 
+                            '公開中の数': public_count,
+                            # 隠しソート列
+                            '_sort_url': mgmt_id,
+                            '_sort_code_clean': target_code_for_name,
+                            '_sort_rank': rank_val
+                        }
                         results_data.append(result_row)
                     
                     if results_data:
@@ -1272,9 +1401,18 @@ else:
                             if p in df_results.columns and p != base_portal_name
                         ]
                         utility_columns = ['チェック', '定期便フラグ', '公開中の数']
-                        display_columns = base_columns + base_portal_column_list + other_portal_columns + utility_columns
+                        # ソート用カラムを保持
+                        sort_columns = ['_sort_url', '_sort_code_clean', '_sort_rank']
+                        
+                        display_columns = base_columns + base_portal_column_list + other_portal_columns + utility_columns + sort_columns
                         final_display_columns = [col for col in display_columns if col in df_results.columns]
-                        st.session_state.results_df = df_results.reindex(columns=final_display_columns)
+                        
+                        # ソート順序の適用
+                        # URL(Asc) -> Code(Asc) -> Parent(Asc:0->1)
+                        df_results = df_results.sort_values(by=['_sort_url', '_sort_code_clean', '_sort_rank'], ascending=[True, True, True])
+                        
+                        # ソート用カラムを削除してセッションステートに保存
+                        st.session_state.results_df = df_results.drop(columns=sort_columns).reindex(columns=[c for c in final_display_columns if c not in sort_columns])
                         
                         # ログ用に表示できたポータル一覧を取得
                         log_displayed_portals = uploaded_portals
@@ -1319,7 +1457,7 @@ else:
             vars_to_delete = [
                 'full_data', 'master_items', 'lookup_maps', 'parent_lookup_maps',
                 'rakuten_product_id_map', 'rakuten_management_id_map', 'rakuten_group_map',
-                'df_base', 'df_business', 'teiki_bin_codes', 'df_results'
+                'df_base', 'df_business', 'teiki_bin_codes', 'df_results', 'item_code_to_mgmt_id_map'
             ]
             
             for var_name in vars_to_delete:
@@ -1616,8 +1754,28 @@ else:
             '要確認': ('#fa6c78', '#000000')  # 要確認は黒文字
         }
 
+        # ★ エクスポート用データ加工関数
+        def prepare_df_for_export(df_input):
+            """エクスポート用にデータフレームを加工する"""
+            df_export = df_input.copy()
+            
+            # 1. 2列目(返礼品コードの右)に「楽天親判定」列を挿入
+            df_export.insert(1, '楽天親判定', '') 
+
+            # 2. 親行の処理: 判定列に'親'を入れ、コードからsuffixを削除
+            mask_parent = df_export['返礼品コード'].astype(str).str.endswith('（楽天親）')
+            
+            if mask_parent.any():
+                df_export.loc[mask_parent, '楽天親判定'] = '親'
+                df_export.loc[mask_parent, '返礼品コード'] = df_export.loc[mask_parent, '返礼品コード'].str.replace('（楽天親）', '')
+                
+            return df_export
+
         # --- to_excel 関数 ---
         def to_excel(df):
+            # ★ エクスポート用にデータを加工
+            df_processed = prepare_df_for_export(df)
+            
             output = BytesIO()
             # XlsxWriter をエンジンとして指定
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -1649,30 +1807,30 @@ else:
                 
                 # --- 2. DataFrameをExcelに書き込む (データのみ) ---
                 # to_excelでデータのみ書き込む (ヘッダーは後で手動描画)
-                df.to_excel(writer, sheet_name=sheet_name, index=False, header=False, startrow=1)
+                df_processed.to_excel(writer, sheet_name=sheet_name, index=False, header=False, startrow=1)
                 
                 # ワークシートオブジェクトを取得
                 worksheet = writer.sheets[sheet_name]
 
                 # --- 3. ヘッダーを手動で書き込む (書式適用のため) ---
-                for col_num, value in enumerate(df.columns.values):
+                for col_num, value in enumerate(df_processed.columns.values):
                     worksheet.write(0, col_num, value, header_format)
 
                 # --- 4. データセルに書式を適用 ---
                 # (to_excelはデフォルト書式しか適用できないため、色付けのために上書き)
                 
                 # PORTAL_ORDER は L.263 付近で定義済み
-                portal_cols = [p for p in PORTAL_ORDER if p in df.columns]
+                portal_cols = [p for p in PORTAL_ORDER if p in df_processed.columns]
                 check_col_name = 'チェック'
                 
                 # データ行をイテレート
-                for row_num in range(len(df)):
+                for row_num in range(len(df_processed)):
                     # データ行の開始は1行目 (0行目はヘッダー)
                     excel_row_idx = row_num + 1 
                     
                     # カラムをイテレート
-                    for col_num, col_name in enumerate(df.columns):
-                        value = df.iloc[row_num, col_num]
+                    for col_num, col_name in enumerate(df_processed.columns):
+                        value = df_processed.iloc[row_num, col_num]
                         
                         # デフォルト書式をまず適用
                         cell_format = default_format
@@ -1689,7 +1847,7 @@ else:
 
                 # --- 5. 列幅を自動調整 ---
                 # DataFrameの列名とインデックス番号の辞書を作成
-                col_indices = {col_name: i for i, col_name in enumerate(df.columns)}
+                col_indices = {col_name: i for i, col_name in enumerate(df_processed.columns)}
 
                 # PORTAL_ORDER は L.263 付近で定義済み
                 portal_cols = [p for p in PORTAL_ORDER if p in col_indices]
@@ -1710,6 +1868,8 @@ else:
                         width = 25 
                     elif col_name == '事業者コード':
                         width = 15 # 事業者コードは少し広め
+                    elif col_name == '楽天親判定': # ★追加された列
+                        width = 10
                     elif col_name not in portal_cols and col_name not in utility_cols:
                         # ステータス列以外 (返礼品コードなど)
                         width = 15 
@@ -1723,9 +1883,12 @@ else:
         # --- CSV変換関数 ---
         @st.cache_data
         def to_csv(df):
+            # ★ エクスポート用にデータを加工
+            df_processed = prepare_df_for_export(df)
+
             # DataFrameをまずCSV文字列に変換
             # (to_csvにencodingを指定しても文字列出力では無視されるため、ここでは指定しない)
-            csv_string = df.to_csv(index=False) 
+            csv_string = df_processed.to_csv(index=False) 
             
             # 文字列を cp932 バイト列にエンコード
             # ★ エンコードできない文字は '?' に置換 (errors='replace')
