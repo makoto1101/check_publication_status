@@ -323,6 +323,10 @@ else:
     # ヘッダーを持たない（`header=None`で読み込む）シートのリスト
     SHEETS_WITHOUT_HEADER = ['チョイス', 'チョイス在庫']
 
+    # --- ★チョイス親判定用の列インデックス定義 ---
+    CHOICE_ID_COL_IDX = 0       # A列: お礼の品ID
+    CHOICE_PARENT_COL_IDX = 100 # CW列: 親お礼の品ID (101列目 -> Index 100)
+    CHOICE_CODE_COL_IDX = 102   # 返礼品コード列 (KEY_COLUMN_MAPと同じ)
 
     # --- ヘルパー関数 ---
     def get_sheet_name_from_filename(filename):
@@ -411,6 +415,9 @@ else:
         # 楽天親コードの場合は、接尾辞を除去してから判定
         if code.endswith('（楽天親）'):
             code = code.replace('（楽天親）', '')
+        # ★ チョイス親コードの場合も除去
+        if code.endswith('（チョイス親）'):
+            code = code.replace('（チョイス親）', '')
 
         if not code: return ''
         if re.match(r'^\d{2}[A-Z]{4}', code): return code[:6]
@@ -543,6 +550,8 @@ else:
         st.session_state.dataframes = {}
     if 'results_df' not in st.session_state:
         st.session_state.results_df = pd.DataFrame()
+    if 'choice_group_map' not in st.session_state:
+        st.session_state.choice_group_map = {} # ★ チョイスのグループ情報保存用
     # (認証関連のセッションステートはStreamlitが内部で管理するため不要)
 
     # --- フィルター状態の初期化 (リセットされないようにsession_stateで管理) ---
@@ -793,6 +802,52 @@ else:
                             mask_warehouse = df['SKU倉庫指定'] != ''
                             df.loc[mask_warehouse, '倉庫指定'] = df.loc[mask_warehouse, 'SKU倉庫指定']
                         
+                        # --- ★ チョイスの親判定・前処理 ★ ---
+                        if sheet_name == 'チョイス':
+                            # 必要な列が存在するか確認 (A列=0, CW列=100, 返礼品コード列=102)
+                            max_col_idx = max(CHOICE_ID_COL_IDX, CHOICE_PARENT_COL_IDX, CHOICE_CODE_COL_IDX)
+                            if df.shape[1] > max_col_idx:
+                                # データ型を文字列に統一してスペース除去
+                                id_series = df[CHOICE_ID_COL_IDX].astype(str).str.strip()
+                                parent_series = df[CHOICE_PARENT_COL_IDX].astype(str).str.strip()
+                                
+                                # 親IDとして参照されているIDのセットを作成
+                                # (CW列に値があり、かつ空文字でないもの)
+                                parent_ids_referenced = set(parent_series[parent_series != ''].unique())
+                                
+                                # A列の値が「親IDセット」に含まれる行を特定（＝親行）
+                                is_parent_row = id_series.isin(parent_ids_referenced)
+                                
+                                # 親行の「返礼品コード(102列目)」に (チョイス親) を付与
+                                df.loc[is_parent_row, CHOICE_CODE_COL_IDX] = df.loc[is_parent_row, CHOICE_CODE_COL_IDX].astype(str) + '（チョイス親）'
+
+                                # ★ ソート用グループマップの作成
+                                # キー: 返礼品コード(サフィックスなし), 値: グループID(親のA列の値)
+                                # 1. 親行: 自分自身がグループID
+                                # 2. 子行: CW列の値がグループID
+                                temp_group_map = {}
+                                
+                                # A列と返礼品コード(102)のマッピング（サフィックス付与後なので注意）
+                                # 子行のために、コード(102) -> 親ID(CW) の関係を取得
+                                child_rows = df[parent_series != '']
+                                for idx, row in child_rows.iterrows():
+                                    code_val = str(row[CHOICE_CODE_COL_IDX]).strip()
+                                    parent_val = str(row[CHOICE_PARENT_COL_IDX]).strip()
+                                    if code_val and parent_val:
+                                        temp_group_map[code_val] = parent_val
+                                
+                                # 親行のために、コード(102) -> 自分自身(A) の関係を取得
+                                # (この時点でコードには '（チョイス親）' がついているので除去してキーにする)
+                                parent_rows = df[is_parent_row]
+                                for idx, row in parent_rows.iterrows():
+                                    code_val_full = str(row[CHOICE_CODE_COL_IDX]).strip()
+                                    code_val_clean = code_val_full.replace('（チョイス親）', '')
+                                    self_id = str(row[CHOICE_ID_COL_IDX]).strip()
+                                    if code_val_clean:
+                                        temp_group_map[code_val_clean] = self_id
+
+                                st.session_state.choice_group_map = temp_group_map
+
                         # -----------------------------------
 
                         if sheet_name not in SKIP_FILTERING_SHEETS:
@@ -1052,16 +1107,23 @@ else:
                                         item_name = ""
                                 master_items[item_code] = item_name
                         
-                        # --- 親コードをマスターに追加（楽天以外がベースの場合） ---
-                        if base_portal_name != '楽天' and '楽天' in full_data:
-                            df_rakuten_check = full_data['楽天']
-                            if '商品番号' in df_rakuten_check.columns:
-                                # （楽天親）で終わるコードを抽出
-                                parent_codes = df_rakuten_check[df_rakuten_check['商品番号'].astype(str).str.endswith('（楽天親）')]['商品番号'].unique()
+                        # --- 親コードをマスターに追加（楽天・チョイス） ---
+                        for p_name in ['楽天', 'チョイス']:
+                            if base_portal_name != p_name and p_name in full_data:
+                                df_check = full_data[p_name]
+                                p_key_col = KEY_COLUMN_MAP[p_name]
+                                suffix = f'（{p_name}親）'
+                                
+                                # キー列データの取得
+                                if isinstance(p_key_col, int):
+                                    check_series = df_check.iloc[:, p_key_col].astype(str)
+                                else:
+                                    check_series = df_check[p_key_col].astype(str)
+                                
+                                parent_codes = check_series[check_series.str.endswith(suffix)].unique()
                                 for p_code in parent_codes:
                                     p_code_str = str(p_code).strip().upper()
                                     if p_code_str not in master_items:
-                                        # マスターに存在しない場合は追加。名称はここでは空にしておき、後続のループで取得ロジックに任せる
                                         master_items[p_code_str] = ""
 
                     lookup_maps, parent_lookup_maps = {}, {}
@@ -1259,24 +1321,35 @@ else:
                         
                         # 親コード判定と名称処理
                         is_rakuten_parent = code.endswith('（楽天親）')
-                        target_code_for_name = code.replace('（楽天親）', '') if is_rakuten_parent else code
+                        is_choice_parent = code.endswith('（チョイス親）') # ★ チョイス親フラグ
+                        
+                        target_code_for_name = code
+                        if is_rakuten_parent: target_code_for_name = code.replace('（楽天親）', '')
+                        if is_choice_parent: target_code_for_name = code.replace('（チョイス親）', '') # ★ 除去
                         
                         # 親コードの場合、名称を再取得（接尾辞なしのコードで）
                         display_name = name
-                        if is_rakuten_parent:
+                        if is_rakuten_parent or is_choice_parent:
                             # マスターアイテムに接尾辞なしのコードがあればその名前を使う
                             if target_code_for_name in master_items and master_items[target_code_for_name]:
                                 display_name = master_items[target_code_for_name]
-                            # なければ、楽天データから名称を取得を試みる
-                            elif '楽天' in lookup_maps and code in lookup_maps['楽天']:
-                                display_name = lookup_maps['楽天'][code].get('商品名', '')
+                            # なければ、元データから名称を取得を試みる
+                            else:
+                                p_source = '楽天' if is_rakuten_parent else 'チョイス'
+                                if p_source in lookup_maps and code in lookup_maps[p_source]:
+                                    nm_col = PORTAL_NAME_COLUMN_MAP[p_source]
+                                    # チョイスはint, 楽天はstr
+                                    if isinstance(nm_col, int):
+                                        display_name = lookup_maps[p_source][code].get(nm_col, '')
+                                    else:
+                                        display_name = lookup_maps[p_source][code].get(nm_col, '')
 
-                        # ★【改修】「子行」が楽天データ内に存在するかチェック
+                        # ★【改修】「子行」がデータ内に存在するかチェック
                         child_exists_exact_match = False
-                        if is_rakuten_parent and '楽天' in lookup_maps:
-                            # サフィックスなしのコードが楽天のマップにあるか
-                            if target_code_for_name in lookup_maps['楽天']:
-                                child_exists_exact_match = True
+                        if is_rakuten_parent and '楽天' in lookup_maps and target_code_for_name in lookup_maps['楽天']:
+                            child_exists_exact_match = True
+                        # ★ チョイスも同様にチェック (リネームされているので、元のIDがマップにあるかどうか)
+                        # ただし、チョイスの場合は「子優先」なので、ここで子がいる＝親行は計算スキップ、というロジックは使わない（検索時に切り替えるため）
 
                         statuses = {}
                         for portal in uploaded_portals:
@@ -1296,6 +1369,24 @@ else:
                                     else:
                                         # 子行が存在しない場合 -> 親行に結果を表示する (サフィックスなしで検索)
                                         lookup_code = target_code_for_name
+                            
+                            # ★ チョイス親の場合の検索ロジック
+                            elif is_choice_parent:
+                                if portal == 'チョイス':
+                                    lookup_code = code # 自分自身は親コードで検索
+                                else:
+                                    # 他ポータル検索時は、サフィックスなしで検索
+                                    lookup_code = target_code_for_name
+                            
+                            # ★ 通常コード(または他ポータルの親)からチョイスを検索する場合のロジック
+                            # 「子もAYG055の時は、子のステータスを優先」
+                            if portal == 'チョイス' and not is_choice_parent:
+                                # まずそのままのコード(子)で検索
+                                if code in lookup_maps.get('チョイス', {}):
+                                    lookup_code = code
+                                else:
+                                    # なければ親コードを試す
+                                    lookup_code = code + '（チョイス親）'
 
                             if skip_calculation:
                                 statuses[portal] = ''
@@ -1314,14 +1405,25 @@ else:
                                     # 楽天のグループマップを渡す
                                     rakuten_group_map=rakuten_group_map
                                 )
-                        
+                            
+                            # ★ 親行における他ポータル検索結果の調整
+                            if (is_choice_parent and portal != 'チョイス') or (is_rakuten_parent and portal != '楽天'):
+                                # 子行（サフィックスなし）が一覧（master_items）に存在する場合は、
+                                # 親行側で他ポータルのステータスを表示すると重複するため '-' とする
+                                if target_code_for_name in master_items:
+                                    statuses[portal] = '-'
+                                # 検索結果が「未登録」の場合も '-' とする（ベースポータル由来ではないため）
+                                elif statuses[portal] == '未登録':
+                                    statuses[portal] = '-'
+
                         status_values = list(statuses.values())
                         
                         # --- チェックロジック ---
                         unique_statuses = set(status_values)
                         
                         # 「非表示」「在庫0」「受付終了」「倉庫」「注文不可」を「グレーゾーン」と定義
-                        allowed_gray_statuses = {'非表示', '在庫0', '受付終了', '倉庫', '注文不可'}
+                        # ★ '-' (対象外) もグレーゾーンに含める (チェック対象外にするため)
+                        allowed_gray_statuses = {'非表示', '在庫0', '受付終了', '倉庫', '注文不可', '-'}
                         
                         # グレーゾーン以外のステータス（公開中、未登録など）を抽出
                         # 空白（親コードの他ポータル分）は無視する
@@ -1337,6 +1439,11 @@ else:
                             # 親行の場合、「公開中」ならOK、それ以外は要確認
                             # 親行は楽天以外の結果が空になる可能性があるため、楽天の結果を重視
                             if statuses.get('楽天') == '公開中':
+                                check_val = 'OK'
+                            else:
+                                check_val = '要確認'
+                        elif is_choice_parent: # ★ チョイス親も同様
+                            if statuses.get('チョイス') == '公開中':
                                 check_val = 'OK'
                             else:
                                 check_val = '要確認'
@@ -1358,15 +1465,22 @@ else:
                         
                         # 1. URL取得
                         mgmt_id = item_code_to_mgmt_id_map.get(code, '')
-                        if not mgmt_id and is_rakuten_parent:
-                             # 親コードでマップにない場合、サフィックスなしで検索トライ
-                             mgmt_id = item_code_to_mgmt_id_map.get(target_code_for_name, '')
-                        # それでもなければ、返礼品コード自体をグループキーとして代用し、末尾に回す
+                        
+                        # ★ チョイスがベースの場合、グループマップを使用
+                        if base_portal_name == 'チョイス' and 'choice_group_map' in st.session_state:
+                            # 検索キーは target_code_for_name (サフィックスなし) を使用
+                            mgmt_id = st.session_state.choice_group_map.get(target_code_for_name, target_code_for_name)
+
                         if not mgmt_id:
-                            mgmt_id = target_code_for_name
+                            if is_rakuten_parent:
+                                 # 親コードでマップにない場合、サフィックスなしで検索トライ
+                                 mgmt_id = item_code_to_mgmt_id_map.get(target_code_for_name, '')
+                            # それでもなければ、返礼品コード自体をグループキーとして代用し、末尾に回す
+                            if not mgmt_id:
+                                mgmt_id = target_code_for_name
 
                         # 2. 親判定ランク (0: 親, 1: 子)
-                        rank_val = 0 if is_rakuten_parent else 1
+                        rank_val = 0 if (is_rakuten_parent or is_choice_parent) else 1
 
                         result_row = {
                             '返礼品コード': code, 
@@ -1394,7 +1508,41 @@ else:
                         else:
                             df_results['事業者名'] = ''
                         
-                        base_columns = ['返礼品コード', '返礼品名', '事業者コード', '事業者名']
+                        # ★ ここから追加：Web表示用データそのものをExcel形式（判定列分離）に合わせる
+                        
+                        # 1. 楽天親判定列の追加とコードのクリーニング
+                        if '楽天' in uploaded_portals:
+                            # 判定列を初期化
+                            df_results['楽天親判定'] = ''
+                            # サフィックスがある行を特定
+                            mask_rakuten = df_results['返礼品コード'].astype(str).str.endswith('（楽天親）')
+                            # 判定列に「親」を入力
+                            df_results.loc[mask_rakuten, '楽天親判定'] = '親'
+                            # 返礼品コードからサフィックスを除去
+                            df_results['返礼品コード'] = df_results['返礼品コード'].str.replace('（楽天親）', '')
+
+                        # 2. チョイス親判定列の追加とコードのクリーニング
+                        if 'チョイス' in uploaded_portals:
+                            # 判定列を初期化
+                            df_results['チョイス親判定'] = ''
+                            # サフィックスがある行を特定
+                            mask_choice = df_results['返礼品コード'].astype(str).str.endswith('（チョイス親）')
+                            # 判定列に「親」を入力
+                            df_results.loc[mask_choice, 'チョイス親判定'] = '親'
+                            # 返礼品コードからサフィックスを除去
+                            df_results['返礼品コード'] = df_results['返礼品コード'].str.replace('（チョイス親）', '')
+
+                        # 3. 表示用の基本列定義を更新
+                        base_columns = ['返礼品コード']
+                        
+                        # uploaded_portals の順序に基づいて判定列を追加
+                        for p in uploaded_portals:
+                            if p == 'チョイス':
+                                base_columns.append('チョイス親判定')
+                            elif p == '楽天':
+                                base_columns.append('楽天親判定')
+                                
+                        base_columns.extend(['返礼品名', '事業者コード', '事業者名'])
                         base_portal_column_list = [base_portal_name] if base_portal_name in df_results.columns else []
                         other_portal_columns = [
                             p for p in PORTAL_ORDER 
@@ -1420,14 +1568,14 @@ else:
                         # ログ書き込み (成功時) 
                         # ★以下コメントアウトして無効化
                         # write_log(
-                        #     service=sheets_service,
-                        #     log_spreadsheet_id=LOG_GSHEET_KEY,
-                        #     user_name=log_user_name,
-                        #     imported_files=log_imported_files,
-                        #     base_portal=selected_base_portal,
-                        #     base_date=select_date_str,
-                        #     displayed_portals=log_displayed_portals,
-                        #     error_msg=""
+                        #      service=sheets_service,
+                        #      log_spreadsheet_id=LOG_GSHEET_KEY,
+                        #      user_name=log_user_name,
+                        #      imported_files=log_imported_files,
+                        #      base_portal=selected_base_portal,
+                        #      base_date=select_date_str,
+                        #      displayed_portals=log_displayed_portals,
+                        #      error_msg=""
                         # )
 
                     else:
@@ -1441,14 +1589,14 @@ else:
                     # ログ書き込み (エラー時) 
                     # ★以下コメントアウトして無効化
                     # write_log(
-                    #     service=sheets_service,
-                    #     log_spreadsheet_id=LOG_GSHEET_KEY,
-                    #     user_name=log_user_name,
-                    #     imported_files=log_imported_files,
-                    #     base_portal=selected_base_portal,
-                    #     base_date=select_date_str,
-                    #     displayed_portals=[],
-                    #     error_msg=error_msg
+                    #      service=sheets_service,
+                    #      log_spreadsheet_id=LOG_GSHEET_KEY,
+                    #      user_name=log_user_name,
+                    #      imported_files=log_imported_files,
+                    #      base_portal=selected_base_portal,
+                    #      base_date=select_date_str,
+                    #      displayed_portals=[],
+                    #      error_msg=error_msg
                     # )
 
             # --- メモリ解放処理 ---
@@ -1491,7 +1639,6 @@ else:
         else:
             st.info("ファイルやDBをサイドバーから設定し、「掲載状況を表示」ボタンを押してください。")
     else:
-        # ソースデータとしてセッションステートのDFを使用
         df_source = st.session_state.results_df
 
         # --- 1. 各フィルターのマスク（条件）を作成 ---
@@ -1501,11 +1648,22 @@ else:
         mask_search = pd.Series(True, index=df_source.index)
         if st.session_state.f_search:
             s = st.session_state.f_search
-            mask_search = (
+            
+            # 基本の検索対象
+            condition = (
                 df_source['返礼品コード'].str.contains(s, na=False, case=False) |
                 df_source['返礼品名'].str.contains(s, na=False, case=False) |
                 df_source['事業者名'].str.contains(s, na=False, case=False)
             )
+        
+            # ★追加: 親判定列が存在する場合、検索対象に含める
+            if '楽天親判定' in df_source.columns:
+                condition |= df_source['楽天親判定'].str.contains(s, na=False, case=False)
+                
+            if 'チョイス親判定' in df_source.columns:
+                condition |= df_source['チョイス親判定'].str.contains(s, na=False, case=False)
+                
+            mask_search = condition
 
         # (2) 返礼品コードマスク
         mask_item = pd.Series(True, index=df_source.index)
@@ -1751,25 +1909,14 @@ else:
             '倉庫': ('#6c757d', '#FFFFFF'),
             '注文不可': ('#6c757d', '#FFFFFF'),
             '未受付': ('#ffc107', '#000000'), # 未受付は黒文字
-            '要確認': ('#fa6c78', '#000000')  # 要確認は黒文字
+            '要確認': ('#fa6c78', '#000000'), # 要確認は黒文字
+            '-': ('#FFFFFF', '#333333')      # ★ 対象外（ハイフン）は白背景・濃いグレー文字
         }
 
-        # ★ エクスポート用データ加工関数
+        # ★ エクスポート用データ加工関数（Web表示と形式が統一されたため、単なるコピーのみ）
         def prepare_df_for_export(df_input):
-            """エクスポート用にデータフレームを加工する"""
-            df_export = df_input.copy()
-            
-            # 1. 2列目(返礼品コードの右)に「楽天親判定」列を挿入
-            df_export.insert(1, '楽天親判定', '') 
-
-            # 2. 親行の処理: 判定列に'親'を入れ、コードからsuffixを削除
-            mask_parent = df_export['返礼品コード'].astype(str).str.endswith('（楽天親）')
-            
-            if mask_parent.any():
-                df_export.loc[mask_parent, '楽天親判定'] = '親'
-                df_export.loc[mask_parent, '返礼品コード'] = df_export.loc[mask_parent, '返礼品コード'].str.replace('（楽天親）', '')
-                
-            return df_export
+            """エクスポート用にデータフレームをコピーして返す"""
+            return df_input.copy()
 
         # --- to_excel 関数 ---
         def to_excel(df):
@@ -1870,6 +2017,8 @@ else:
                         width = 15 # 事業者コードは少し広め
                     elif col_name == '楽天親判定': # ★追加された列
                         width = 10
+                    elif col_name == 'チョイス親判定': # ★追加された列
+                        width = 12
                     elif col_name not in portal_cols and col_name not in utility_cols:
                         # ステータス列以外 (返礼品コードなど)
                         width = 15 
@@ -1944,7 +2093,7 @@ else:
         # --- データフレームのスタイリングと表示 ---
         color_map = {'公開中': 'background-color: #22a579; color: white;', '未登録': 'background-color: #111111; color: white;', '受付終了': 'background-color: #6c757d; color: white;', 
                      '非表示': 'background-color: #6c757d; color: white;', '在庫0': 'background-color: #6c757d; color: white;', '倉庫': 'background-color: #6c757d; color: white;',
-                     '注文不可': 'background-color: #6c757d; color: white;', '未受付': 'background-color: #ffc107; color: black;'}
+                     '注文不可': 'background-color: #6c757d; color: white;', '未受付': 'background-color: #ffc107; color: black;', '-': 'background-color: white; color: #333333;'}
         
         def style_dataframe(df):
             style = pd.DataFrame('', index=df.index, columns=df.columns)
@@ -1970,8 +2119,10 @@ else:
             # ★ スライスしたDFのインデックスを全体の連番に変更
             df_sliced.index = range(start_idx + 1, start_idx + 1 + len(df_sliced))
             
-            # スタイリング対象のカラムリスト
-            center_aligned_cols = [p for p in PORTAL_ORDER if p in df_sliced.columns] + ['チェック', '定期便フラグ', '公開中の数']
+            # スタイリング対象のカラムリスト（判定列を追加）
+            center_aligned_cols = [p for p in PORTAL_ORDER if p in df_sliced.columns] + ['楽天親判定', 'チョイス親判定', 'チェック', '定期便フラグ', '公開中の数']
+            # 存在しない列が含まれていても set_properties は無視してくれるが、念のため存在する列のみフィルタリングしてもよい
+            center_aligned_cols = [c for c in center_aligned_cols if c in df_sliced.columns]
 
             # ★ スライスした df_sliced に対してスタイリング
             styler = df_sliced.style.apply(style_dataframe, axis=None).set_properties(subset=center_aligned_cols, **{'text-align': 'center'})
@@ -2053,7 +2204,8 @@ else:
                     keys_to_clear = [
                         'results_df', 'dataframes', 'choice_stock_processed', 'rakuten_merged',
                         'current_select_date_str', 'current_base_portal',
-                        'f_search', 'f_vendor', 'f_item_code', 'f_check', 'f_teiki' # ★ フィルター設定もクリア
+                        'f_search', 'f_vendor', 'f_item_code', 'f_check', 'f_teiki', # ★ フィルター設定もクリア
+                        'choice_group_map' # ★ チョイスのグループ情報
                     ]
                     for key in keys_to_clear:
                         if key in st.session_state:

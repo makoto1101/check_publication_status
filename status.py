@@ -59,6 +59,16 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
     # app.py側で code が .upper() されているため、大文字で検索
     row = lookup_maps.get(portal, {}).get(code)
     
+    # --- チョイスの場合の親コードフォールバック検索 ---
+    # 他ポータルがベースの場合、検索キー(code)はサフィックスなしの通常コードで渡ってくる。
+    # チョイス側に通常コード(子)がなく、親コードのみが存在する場合に対応するため、
+    # ここで親コード(サフィックスあり)での再検索を行う。
+    if portal == 'チョイス' and not row:
+        parent_key = str(code).strip() + '（チョイス親）'
+        row = lookup_maps.get(portal, {}).get(parent_key)
+        # ※この row を使って後続の判定を行うため、判定ロジック自体は子と同じものが適用される
+    # ------------------------------------------------
+
     # 楽天・さとふる・ぐるなび以外は、row（=コードに対応する行データ）がなければ「未登録」
     # ※ぐるなびはロジック内で個別に row チェックを行うため、ここでは対象外とする（または下記ロジックで対応）
     if not row and portal not in ['楽天', 'さとふる', 'ぐるなび']: 
@@ -68,15 +78,55 @@ def calculate_status(portal, code, lookup_maps, parent_lookup_maps, select_date_
     if portal == 'チョイス':
         # (ヘッダー無しのファイルなのでインデックス番号で指定するが、変数名を分かりやすく変更)
         # CT列 (97) -> 表示有無 (0=非表示, 1=表示)
-        display_flag = get_val('チョイス', code, 97)
+        # ※ row取得時に親コードへフォールバックしている場合でも、get_val内で lookup_maps を再検索するため
+        #    ここで使用する code も row に合わせて親キーにする必要があるか？
+        #    → get_val は引数の code を使って再検索を行う仕様。
+        #      row が親キーで取得された場合、code は子キーのままなので get_val でヒットしない可能性がある。
+        #      したがって、row から正しいキー(key_col_str)を取得して上書きするか、
+        #      row自体から値を取得するように変更するのが理想だが、get_valはlookup_maps依存。
+        #      ここでは簡易的に、もし row が見つかっていて、かつ元の code で get_val が失敗する（空文字）ようなら
+        #      親キーで get_val を呼ぶ必要があるが、get_val は汎用関数のため、
+        #      ここで code を「実際にヒットしたキー」に差し替えるのが安全。
+        
+        actual_code = code
+        if row:
+            # row['key_col_str'] に検索に使ったキーが入っている（app.pyの読み込み時に設定済みと仮定）
+            # もし入っていなければ、parent_key を試す
+            if 'key_col_str' in row:
+                actual_code = row['key_col_str']
+            elif str(code).strip() + '（チョイス親）' in lookup_maps.get(portal, {}):
+                 # フォールバックしたと推測される場合
+                 if not lookup_maps.get(portal, {}).get(code):
+                     actual_code = str(code).strip() + '（チョイス親）'
+
+        display_flag = get_val('チョイス', actual_code, 97)
         # CU列 (98) -> 受付開始日時
-        start_date = format_date(get_val('チョイス', code, 98))
+        start_date = format_date(get_val('チョイス', actual_code, 98))
         # CV列 (99) -> 受付終了日時
-        end_date = format_date(get_val('チョイス', code, 99))
+        end_date = format_date(get_val('チョイス', actual_code, 99))
         
         # チョイス在庫ファイルから在庫数を取得 (x_val の元データ)
         # (チョイス在庫, 4) -> 在庫数
-        stock_lookup = get_val('チョイス在庫', code, 4)
+        # ★在庫ファイル側も親キーで検索する必要がある
+        #   app.py側でチョイス在庫の読み込み時に親判定＆サフィックス付与はしていない（と思われる）場合、
+        #   在庫ファイルは「元のID」で紐づくため、actual_code が親サフィックス付きだとヒットしない可能性がある。
+        #   しかし、app.py の robust_read_file -> チョイス親判定処理 は「チョイス」シートに対して行われている。
+        #   「チョイス在庫」には親フラグ列がないため、サフィックスは付いていないはず。
+        #   -> なので、在庫取得には「元の code (サフィックスなし)」を使うのが正解に近いが、
+        #      親行の場合、ID（1列目）自体は子と同じ値が入っているはずなので、
+        #      actual_code がサフィックス付きでも、在庫検索用のマップ(lookup_maps['チョイス在庫'])のキーがどうなっているか次第。
+        #      app.py L.635付近で在庫データのキーは `mapped_codes` (返礼品コード) になっている。
+        #      親行の返礼品コードはサフィックス付きに置換されている。
+        #      在庫データの `mapped_codes` も親行に対してはサフィックス付きになるよう app.py 側で整合性が取れている必要がある。
+        #      
+        #      提供された app.py を見ると、チョイス在庫の処理（L.620以降）では
+        #      `df_choice` から IDマップを作成している。
+        #      この `df_choice` は既に親判定処理（L.583）通過後なので、親行の102列目はサフィックス付きになっている。
+        #      したがって、`id_map` も `{ID: 'CODE（チョイス親）'}` となっている。
+        #      よって、在庫ファイルのキーもサフィックス付きになっている。
+        #      結論：在庫取得も `actual_code`（サフィックス付き）で行えばOK。
+
+        stock_lookup = get_val('チョイス在庫', actual_code, 4)
         
         stock_status = "" # (x_val)
         if stock_lookup != "":
