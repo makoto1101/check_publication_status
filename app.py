@@ -757,7 +757,7 @@ else:
                                 continue  # このファイルの処理をスキップして次のファイルへ
                             
                             # 2. データ加工: 先頭行のデータを同グループの下行へコピー (fill-down)
-                            # ★【修正】親判定のために「商品番号」をfill-downしてはいけないため、リストから除外
+                            # ★ 親判定のために「商品番号」をfill-downしてはいけないため、リストから除外
                             fill_targets = ['商品名', 'サーチ表示', '販売期間指定（開始日時）', '販売期間指定（終了日時）', '注文ボタン']
                             
                             grouped_first = df.groupby('商品管理番号（商品URL）')[fill_targets].first()
@@ -1344,7 +1344,7 @@ else:
                                     else:
                                         display_name = lookup_maps[p_source][code].get(nm_col, '')
 
-                        # ★【改修】「子行」がデータ内に存在するかチェック
+                        # ★「子行」がデータ内に存在するかチェック
                         child_exists_exact_match = False
                         if is_rakuten_parent and '楽天' in lookup_maps and target_code_for_name in lookup_maps['楽天']:
                             child_exists_exact_match = True
@@ -1434,27 +1434,55 @@ else:
                         
                         check_val = "OK" # デフォルトをOKに設定
                         
-                        # 親行のチェック列判定ロジック変更
-                        if is_rakuten_parent:
-                            # 親行の場合、「公開中」ならOK、それ以外は要確認
-                            # 親行は楽天以外の結果が空になる可能性があるため、楽天の結果を重視
-                            if statuses.get('楽天') == '公開中':
+                        # [New Logic] 1ファイルのみインポート時のチェック（ポータル問わず共通）
+                        if len(uploaded_portals) == 1:
+                            # 1ファイルのみの場合は、そのポータルが「公開中」ならOK、それ以外は要確認
+                            if '公開中' in status_values:
                                 check_val = 'OK'
                             else:
                                 check_val = '要確認'
-                        elif is_choice_parent: # ★ チョイス親も同様
-                            if statuses.get('チョイス') == '公開中':
-                                check_val = 'OK'
-                            else:
-                                check_val = '要確認'
+
+                        # [Existing Logic] 複数ファイルインポート時のチェック
                         else:
-                            # 通常行のロジック
-                            # パターン1: グレーゾーン以外のステータスが2種類以上ある場合 (例: '公開中'と'未登録')
-                            if len(main_statuses) >= 2:
-                                check_val = "要確認"
-                            # パターン2: グレーゾーン以外のステータスが1種類あり、かつグレーゾーンのステータスも1種類以上ある場合 (例: '公開中'と'在庫0')
-                            elif len(main_statuses) == 1 and len(gray_statuses) >= 1:
-                                check_val = "要確認"
+                            # ★特例判定フラグ
+                            apply_special_rule = False
+
+                            # ★ヘルパー関数: 対象ポータル以外が全て「-」または「空」かチェックする
+                            def is_single_portal_row(target_name):
+                                for p in uploaded_portals:
+                                    if p == target_name: continue
+                                    val = statuses.get(p, '')
+                                    # 「-」でも「空」でもない値がある ＝ 他ポータルのステータスが存在する
+                                    if val != '-' and val != '':
+                                        return False
+                                return True
+
+                            # 1. 楽天親の特例判定
+                            # (楽天親行で、かつ他ポータルが全てハイフンの場合)
+                            if is_rakuten_parent and is_single_portal_row('楽天'):
+                                apply_special_rule = True
+                                if statuses.get('楽天') == '公開中':
+                                    check_val = 'OK'
+                                else:
+                                    check_val = '要確認'
+
+                            # 2. チョイス親の特例判定
+                            # (チョイス親行で、かつ他ポータルが全てハイフンの場合)
+                            elif is_choice_parent and is_single_portal_row('チョイス'):
+                                apply_special_rule = True
+                                if statuses.get('チョイス') == '公開中':
+                                    check_val = 'OK'
+                                else:
+                                    check_val = '要確認'
+
+                            # 3. 通常判定 (特例に当てはまらない場合)
+                            if not apply_special_rule:
+                                # パターン1: グレーゾーン以外のステータスが2種類以上ある場合 (例: '公開中'と'未登録')
+                                if len(main_statuses) >= 2:
+                                    check_val = "要確認"
+                                # パターン2: グレーゾーン以外のステータスが1種類あり、かつグレーゾーンのステータスも1種類以上ある場合 (例: '公開中'と'在庫0')
+                                elif len(main_statuses) == 1 and len(gray_statuses) >= 1:
+                                    check_val = "要確認"
                         
                         public_count = sum(1 for s in status_values if s == '公開中')
                         
