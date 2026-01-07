@@ -1436,9 +1436,9 @@ else:
                         
                         # [New Logic] 1ファイルのみインポート時のチェック（ポータル問わず共通）
                         if len(uploaded_portals) == 1:
-                            # 1ファイルのみの場合は、そのポータルが「公開中」ならOK、それ以外は要確認
+                            # 1ファイルのみの場合は、そのポータルが「公開中」なら「公開」、それ以外は「要確認」
                             if '公開中' in status_values:
-                                check_val = 'OK'
+                                check_val = '公開'
                             else:
                                 check_val = '要確認'
 
@@ -1484,6 +1484,19 @@ else:
                                 elif len(main_statuses) == 1 and len(gray_statuses) >= 1:
                                     check_val = "要確認"
                         
+                        # 複数ポータルの場合で、判定がOKの場合の文言書き換え
+                        if check_val == "OK" and len(uploaded_portals) > 1:
+                            
+                            # 1. 「公開中」が含まれている場合 -> 公開
+                            # (通常判定で全員公開中の場合、または特例で親が公開中の場合)
+                            if '公開中' in unique_statuses:
+                                check_val = "公開"
+                            
+                            # 2. アクティブなステータス(公開中、未登録など)がなく、グレーゾーンのみの場合 -> 非表示
+                            # (main_statusesはアクティブなものを抽出した集合)
+                            elif len(main_statuses) == 0 and len(gray_statuses) > 0:
+                                check_val = "非表示"
+
                         public_count = sum(1 for s in status_values if s == '公開中')
                         
                         teiki_bin_flag = '〇' if target_code_for_name in teiki_bin_codes else '×'
@@ -1593,17 +1606,17 @@ else:
                         # ログ用に表示できたポータル一覧を取得
                         log_displayed_portals = uploaded_portals
 
-                        # ログ書き込み (成功時) 
+                        # ログ書き込み (成功時) 
                         # ★以下コメントアウトして無効化
                         # write_log(
-                        #      service=sheets_service,
-                        #      log_spreadsheet_id=LOG_GSHEET_KEY,
-                        #      user_name=log_user_name,
-                        #      imported_files=log_imported_files,
-                        #      base_portal=selected_base_portal,
-                        #      base_date=select_date_str,
-                        #      displayed_portals=log_displayed_portals,
-                        #      error_msg=""
+                        #      service=sheets_service,
+                        #      log_spreadsheet_id=LOG_GSHEET_KEY,
+                        #      user_name=log_user_name,
+                        #      imported_files=log_imported_files,
+                        #      base_portal=selected_base_portal,
+                        #      base_date=select_date_str,
+                        #      displayed_portals=log_displayed_portals,
+                        #      error_msg=""
                         # )
 
                     else:
@@ -1614,17 +1627,17 @@ else:
                     st.error(f"処理中に予期せぬエラーが発生しました: {e}"); import traceback; st.code(traceback.format_exc())
                     st.session_state.results_df = pd.DataFrame()
 
-                    # ログ書き込み (エラー時) 
+                    # ログ書き込み (エラー時) 
                     # ★以下コメントアウトして無効化
                     # write_log(
-                    #      service=sheets_service,
-                    #      log_spreadsheet_id=LOG_GSHEET_KEY,
-                    #      user_name=log_user_name,
-                    #      imported_files=log_imported_files,
-                    #      base_portal=selected_base_portal,
-                    #      base_date=select_date_str,
-                    #      displayed_portals=[],
-                    #      error_msg=error_msg
+                    #      service=sheets_service,
+                    #      log_spreadsheet_id=LOG_GSHEET_KEY,
+                    #      user_name=log_user_name,
+                    #      imported_files=log_imported_files,
+                    #      base_portal=selected_base_portal,
+                    #      base_date=select_date_str,
+                    #      displayed_portals=[],
+                    #      error_msg=error_msg
                     # )
 
             # --- メモリ解放処理 ---
