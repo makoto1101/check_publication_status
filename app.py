@@ -1495,7 +1495,7 @@ else:
                             # 2. アクティブなステータス(公開中、未登録など)がなく、グレーゾーンのみの場合 -> 非表示
                             # (main_statusesはアクティブなものを抽出した集合)
                             elif len(main_statuses) == 0 and len(gray_statuses) > 0:
-                                check_val = "非表示"
+                                check_val = "非公開"
 
                         public_count = sum(1 for s in status_values if s == '公開中')
                         
